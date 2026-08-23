@@ -605,6 +605,11 @@ void ProjectManager::_open_selected_projects() {
 
 		print_line("Editing project: " + path);
 
+#ifdef ANDROID_ENABLED
+		print_line(".NET/Android: Preparing to open project in editor mode...");
+		print_line(".NET/Android: Project path = " + path);
+#endif
+
 		List<String> args;
 
 		for (const String &a : Main::get_forwardable_cli_arguments(Main::CLI_SCOPE_TOOL)) {
@@ -624,6 +629,11 @@ void ProjectManager::_open_selected_projects() {
 			args.push_back("--verbose");
 		}
 
+#ifdef ANDROID_ENABLED
+		// Always force verbose on Android editor builds so Mono/.NET crash logs are visible
+		args.push_back("--verbose");
+#endif
+
 		if (ask_upgrade_tool->is_pressed()) {
 			args.push_back("--run-upgrade-tool");
 		}
@@ -633,8 +643,16 @@ void ProjectManager::_open_selected_projects() {
 			loading_label->hide();
 			_show_error(vformat(TTR("Can't open project at '%s'.\nFailed to start the editor."), path));
 			ERR_PRINT(vformat("Failed to start an editor instance for the project at '%s', error code %d.", path, err));
+
+#ifdef ANDROID_ENABLED
+			ERR_PRINT(".NET/Android: create_instance failed. This is a common cause of crash on Android editor.");
+#endif
 			return;
 		}
+
+#ifdef ANDROID_ENABLED
+		print_line(".NET/Android: create_instance succeeded. Project Manager will now quit.");
+#endif
 	}
 
 	project_list->project_opening_initiated = true;
