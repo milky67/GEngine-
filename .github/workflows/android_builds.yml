@@ -50,50 +50,33 @@ jobs:
           mkdir -p /tmp/dotnet-android-arm64
           cd /tmp/dotnet-android-arm64
 
-          # I-setup ang output directory para sa APK native libraries
           DEST_JNI=$GITHUB_WORKSPACE/platform/android/java/editor/src/main/jniLibs/arm64-v8a
           mkdir -p $DEST_JNI
           mkdir -p $GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Api
           mkdir -p $GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Tools
 
-          # A. Download Microsoft .NET CoreCLR Android ARM64 Runtime
-          echo "=== Downloading Microsoft.NETCore.App.Runtime.android-arm64 ==="
-          curl -sSL -o android_coreclr.zip https://www.nuget.org/api/v2/package/Microsoft.NETCore.App.Runtime.android-arm64/8.0.8 || \
-          curl -sSL -o android_coreclr.zip https://www.nuget.org/api/v2/package/Microsoft.NETCore.App.Runtime.android-arm64/8.0.0
-          unzip -q -o android_coreclr.zip -d coreclr_extracted
+          echo "=== Downloading Microsoft.NETCore.App.Runtime.android-arm64 via NuGet ==="
+          dotnet nuget install Microsoft.NETCore.App.Runtime.android-arm64 -Version 8.0.8 -OutputDirectory ./packages || \
+          dotnet nuget install Microsoft.NETCore.App.Runtime.android-arm64 -Version 8.0.0 -OutputDirectory ./packages
 
-          # B. Download Microsoft MonoVM Android ARM64 Runtime (libmonosgen)
-          echo "=== Downloading Microsoft.NETCore.App.Runtime.Mono.android-arm64 ==="
-          curl -sSL -o android_mono.zip https://www.nuget.org/api/v2/package/Microsoft.NETCore.App.Runtime.Mono.android-arm64/8.0.8 || \
-          curl -sSL -o android_mono.zip https://www.nuget.org/api/v2/package/Microsoft.NETCore.App.Runtime.Mono.android-arm64/8.0.0 || true
-          if [ -f android_mono.zip ]; then
-            unzip -q -o android_mono.zip -d mono_extracted
-          fi
+          echo "=== Downloading Microsoft.NETCore.App.Runtime.Mono.android-arm64 via NuGet ==="
+          dotnet nuget install Microsoft.NETCore.App.Runtime.Mono.android-arm64 -Version 8.0.8 -OutputDirectory ./packages || \
+          dotnet nuget install Microsoft.NETCore.App.Runtime.Mono.android-arm64 -Version 8.0.0 -OutputDirectory ./packages || true
 
-          # C. Download Linux-ARM64 packages para sa hostfxr binaries
-          echo "=== Downloading Linux-ARM64 hostfxr ==="
-          mkdir -p /tmp/dotnet-arm64
-          curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --runtime dotnet --version 8.0.8 --os linux --arch arm64 --install-dir /tmp/dotnet-arm64 || true
+          find ./packages -name "*.so" -exec cp -v {} $DEST_JNI/ \;
 
-          # Kopyahin ang lahat ng nahanap na .so files sa jniLibs/arm64-v8a
-          find . -name "*.so" -exec cp -v {} $DEST_JNI/ \;
-          find /tmp/dotnet-arm64/ -name "*.so" -exec cp -v {} $DEST_JNI/ \;
-
-          # D. Kunin ang official libc++_shared.so mula sa Android NDK
           NDK_LIBCXX=$(find $ANDROID_SDK_ROOT/ndk -name "libc++_shared.so" | grep "aarch64" | head -n 1)
           if [ -n "$NDK_LIBCXX" ]; then
             cp -v "$NDK_LIBCXX" $DEST_JNI/
-            # Gumawa ng symlinks / copies para sa GNU glibc compatibility stubs
             cp -v "$NDK_LIBCXX" $DEST_JNI/libgcc_s.so.1
-            echo "Copied libc++_shared.so and created libgcc_s.so.1 compatibility stub!"
+            echo "Copied libc++_shared.so and libgcc_s.so.1 compatibility stub!"
           fi
 
-          # E. Kung may libmonosgen-2.0.so, gumawa rin ng alias na libmonosgen.so
           if [ -f "$DEST_JNI/libmonosgen-2.0.so" ]; then
             cp -v "$DEST_JNI/libmonosgen-2.0.so" "$DEST_JNI/libmonosgen.so"
           fi
 
-          echo "=== List of all bundled Android ARM64 Native Libraries ==="
+          echo "=== List of bundled Android ARM64 Native Libraries ==="
           ls -lh $DEST_JNI/
 
       # 2. Build Host Linux Editor & Generate Mono Glue
@@ -102,7 +85,7 @@ jobs:
           scons platform=linuxbsd target=editor module_mono_enabled=yes -j$(nproc)
           ./bin/godot.linuxbsd.editor.x86_64.mono --headless --generate-mono-glue modules/mono/glue
 
-      # 3. Build GodotSharp Assemblies (C# API & Tools)
+      # 3. Build GodotSharp Assemblies
       - name: Build GodotSharp Assemblies
         run: |
           python ./modules/mono/build_scripts/build_assemblies.py --godot-output-dir=./bin --precision=single
@@ -115,10 +98,8 @@ jobs:
       # 5. Isama ang GodotSharp Assemblies sa Assets at i-configure ang Gradle
       - name: Bundle GodotSharp inside Android Assets
         run: |
-          # Kopyahin ang buong GodotSharp binaries directory
           cp -rv bin/GodotSharp/* platform/android/java/editor/src/main/assets/GodotSharp/
           
-          # I-disable ang DLL compression sa APK para gumana ang mmap
           if [ -f platform/android/java/editor/build.gradle ]; then
             echo "" >> platform/android/java/editor/build.gradle
             echo "android {" >> platform/android/java/editor/build.gradle
