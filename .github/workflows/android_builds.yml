@@ -44,8 +44,8 @@ jobs:
         run: |
           python ./misc/scripts/install_swappy_android.py
 
-      # 1. I-download at i-setup ang .NET 8 ARM64 Runtime Libraries (.so files)
-      - name: Setup .NET 8 Linux ARM64 Native Runtime (.so)
+      # 1. Download .NET 8 Runtime at ayusin ang Android Bionic glibc compatibility (.so dependencies)
+      - name: Setup .NET 8 ARM64 Runtime & Bionic ABI Compatibility
         run: |
           mkdir -p /tmp/dotnet-arm64
           curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --runtime dotnet --version 8.0.8 --os linux --arch arm64 --install-dir /tmp/dotnet-arm64
@@ -54,33 +54,44 @@ jobs:
           mkdir -p platform/android/java/editor/src/main/assets/GodotSharp/Api
           mkdir -p platform/android/java/editor/src/main/assets/GodotSharp/Tools
           
-          # Isama ang lahat ng .so libraries sa jniLibs ng APK
+          # Isama ang lahat ng .so libraries mula sa .NET runtime sa jniLibs folder
           find /tmp/dotnet-arm64/ -name "*.so" -exec cp -v {} platform/android/java/editor/src/main/jniLibs/arm64-v8a/ \;
-          echo "Native .NET .so libraries successfully integrated into jniLibs/arm64-v8a!"
 
-      # 2. I-compile ang Host Linux Editor at I-generate ang Mono Glue
+          # Kunin ang libc++_shared.so mula sa Android NDK
+          NDK_LIBCXX=$(find $ANDROID_SDK_ROOT/ndk -name "libc++_shared.so" | grep "aarch64" | head -n 1)
+          if [ -n "$NDK_LIBCXX" ]; then
+            cp -v "$NDK_LIBCXX" platform/android/java/editor/src/main/jniLibs/arm64-v8a/
+            # Gumawa ng fallback copy para sa libgcc_s.so.1 na hinahanap ng GNU coreclr
+            cp -v "$NDK_LIBCXX" platform/android/java/editor/src/main/jniLibs/arm64-v8a/libgcc_s.so.1
+            echo "Copied libc++_shared.so and created libgcc_s.so.1 compat stub!"
+          fi
+
+          echo "=== jniLibs/arm64-v8a contents ==="
+          ls -la platform/android/java/editor/src/main/jniLibs/arm64-v8a/
+
+      # 2. Build Host Linux Editor & Generate Mono Glue
       - name: Build Host Linux Editor (for Mono Glue)
         run: |
           scons platform=linuxbsd target=editor module_mono_enabled=yes -j$(nproc)
           ./bin/godot.linuxbsd.editor.x86_64.mono --headless --generate-mono-glue modules/mono/glue
 
-      # 3. I-build ang GodotSharp Assemblies (C# API & Core Tools)
+      # 3. Build GodotSharp Assemblies
       - name: Build GodotSharp Assemblies
         run: |
           python ./modules/mono/build_scripts/build_assemblies.py --godot-output-dir=./bin --precision=single
 
-      # 4. I-compile ang Android Editor Engine gamit ang Mono (Target: arm64)
+      # 4. Compile Android Engine with Mono (ARM64)
       - name: Compile Android Editor with C# (arm64)
         run: |
           scons platform=android target=editor arch=arm64 ${{ env.SCONS_FLAGS }} -j$(nproc)
 
-      # 5. Isama ang GodotSharp DLLs at i-configure ang Gradle Assets
+      # 5. Isama ang GodotSharp Assemblies sa Assets at i-configure ang Gradle
       - name: Bundle GodotSharp inside Android Assets
         run: |
           # Kopyahin ang lahat ng nabuong GodotSharp binaries
           cp -rv bin/GodotSharp/* platform/android/java/editor/src/main/assets/GodotSharp/
           
-          # I-prevent ang compression sa mga .dll files para mabilis at safe mabasa ng CoreCLR / Mono loader
+          # Tiyakin na uncompressed ang mga .dll files para mabasa ng memory map (mmap)
           if [ -f platform/android/java/editor/build.gradle ]; then
             echo "" >> platform/android/java/editor/build.gradle
             echo "android {" >> platform/android/java/editor/build.gradle
@@ -93,7 +104,7 @@ jobs:
           echo "=== GodotSharp Assets bundled successfully ==="
           ls -la platform/android/java/editor/src/main/assets/GodotSharp/
 
-      # 6. I-package ang All-In-One Android Editor APK
+      # 6. Generate All-in-One APK
       - name: Generate Android Editor APK
         run: |
           cd platform/android/java
@@ -101,7 +112,7 @@ jobs:
           cd ../../..
           ls -lh bin/android_editor_builds/
 
-      # 7. I-upload ang Final APK Artifact
+      # 7. Upload Direct APK Artifact
       - name: Upload GEngine Android Editor APK
         uses: actions/upload-artifact@v4
         with:
