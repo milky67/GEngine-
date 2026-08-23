@@ -1,7 +1,7 @@
 name: 🤖 Android C# (.NET) Editor Build
 
 on:
-  workflow_dispatch: # Pwede mong i-click manual para mag-build anytime
+  workflow_dispatch:
   push:
     branches: [ master, main, 4.* ]
   pull_request:
@@ -26,13 +26,11 @@ jobs:
         with:
           submodules: recursive
 
-      # 1. Set up .NET 8 SDK (Kailangan para sa C# Compiler & Glue)
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      # 2. Set up Java 17
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -42,23 +40,23 @@ jobs:
       - name: Setup Python and SCons
         uses: ./.github/actions/godot-deps
 
-      # 3. Step A: I-compile muna ang Host (Linux) tools para sa Glue Generation
+      # 3. May "--headless" na ito para hindi mag-crash sa X11 display error
       - name: Build Host Linux Editor (for Mono Glue)
         run: |
           scons platform=linuxbsd target=editor module_mono_enabled=yes -j$(nproc)
-          ./bin/godot.linuxbsd.editor.x86_64.mono --generate-mono-glue modules/mono/glue
+          ./bin/godot.linuxbsd.editor.x86_64.mono --headless --generate-mono-glue modules/mono/glue
 
-      # 4. Step B: I-compile ang C# GodotSharp assemblies
+      # 4. Build C# Assemblies
       - name: Build GodotSharp Assemblies
         run: |
           python ./modules/mono/build_scripts/build_assemblies.py --godot-output-dir=./bin --precision=single
 
-      # 5. Step C: I-compile ang mismong Android Binary na may C# Support
+      # 5. Compile Android with Mono
       - name: Compile Android Editor with C# (arm64)
         run: |
           scons platform=android target=editor arch=arm64 ${{ env.SCONS_FLAGS }} -j$(nproc)
 
-      # 6. Step D: I-package bilang Android APK
+      # 6. Generate APK
       - name: Generate Android Editor APK
         run: |
           cd platform/android/java
@@ -66,7 +64,7 @@ jobs:
           cd ../../..
           ls -lh bin/android_editor_builds/
 
-      # 7. Step E: I-upload ang APK para ma-download mo sa phone
+      # 7. Upload APK Artifact
       - name: Upload Android Editor APK
         uses: actions/upload-artifact@v4
         with:
