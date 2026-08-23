@@ -17,7 +17,8 @@ namespace GodotTools.ProjectEditor
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentException("Project name is empty.", nameof(name));
 
-            var root = ProjectRootElement.Create(NewProjectFileOptions.None);
+            // Standard MSBuild Create method compatible across all .NET versions
+            var root = ProjectRootElement.Create();
 
             root.Sdk = GodotSdkAttrValue;
 
@@ -51,7 +52,7 @@ namespace GodotTools.ProjectEditor
             }
             catch (Exception)
             {
-                // Fallback direct XML string writer kapag nag-fail ang MSBuild construction sa Android
+                // Safe direct XML string fallback on mobile environments where MSBuild evaluation fails
                 var sb = new StringBuilder();
                 sb.AppendLine($"<Project Sdk=\"{GodotSdkAttrValue}\">");
                 sb.AppendLine("  <PropertyGroup>");
