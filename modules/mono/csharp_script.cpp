@@ -369,6 +369,12 @@ Ref<Script> CSharpLanguage::make_template(const String &p_template, const String
 								 .replace("_CLASS_", class_name_no_spaces)
 								 .replace("_TS_", _get_indentation());
 	scr->set_source_code(processed_template);
+
+#ifdef ANDROID_ENABLED
+	// Sa Android: Huwag markahan agad na valid habang ginagawa pa lang ang file para iwas crash
+	scr->valid = false;
+#endif
+
 	return scr;
 }
 
