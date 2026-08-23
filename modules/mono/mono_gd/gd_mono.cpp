@@ -5,28 +5,6 @@
 /* GODOT ENGINE                                                           */
 /* https://godotengine.org                                                */
 /**************************************************************************/
-/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
-/*                                                                        */
-/* Permission is hereby granted, free of charge, to any person obtaining  */
-/* a copy of this software and associated documentation files (the        */
-/* "Software"), to deal in the Software without restriction, including    */
-/* without limitation the rights to use, copy, modify, merge, publish,    */
-/* distribute, sublicense, and/or sell copies of the Software, and to     */
-/* permit persons to whom the Software is furnished to do so, subject to  */
-/* the following conditions:                                              */
-/*                                                                        */
-/* The above copyright notice and this permission notice shall be         */
-/* included in all copies or substantial portions of the Software.        */
-/*                                                                        */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
-/**************************************************************************/
 
 #include "gd_mono.h"
 
@@ -106,15 +84,39 @@ const char_t *get_data(const HostFxrCharString &p_char_str) {
 	return (const char_t *)p_char_str.get_data();
 }
 
+#ifdef ANDROID_ENABLED
+// Kinokopya ang assets papuntang internal storage para mabasa ng C++ native APIs
+String ensure_file_extracted_to_storage(const String &p_res_path, const String &p_filename) {
+	String dest_dir = OS::get_singleton()->get_user_data_dir().path_join("GodotSharp_Extracted");
+	DirAccess::make_dir_recursive_absolute(dest_dir);
+
+	String dest_path = dest_dir.path_join(p_filename);
+	if (FileAccess::exists(dest_path)) {
+		return dest_path;
+	}
+
+	String src_path = p_res_path.path_join(p_filename);
+	if (FileAccess::exists(src_path)) {
+		Vector<uint8_t> data = FileAccess::get_file_as_bytes(src_path);
+		if (!data.is_empty()) {
+			Ref<FileAccess> fa = FileAccess::open(dest_path, FileAccess::WRITE);
+			if (fa.is_valid()) {
+				fa->store_buffer(data.ptr(), data.size());
+				fa->close();
+				return dest_path;
+			}
+		}
+	}
+	return dest_path;
+}
+#endif
+
 #ifdef TOOLS_ENABLED
 bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 #if defined(ANDROID_ENABLED)
 	Vector<String> possible_roots;
 	possible_roots.push_back("/storage/emulated/0/GEngine/dotnet");
 	possible_roots.push_back("/storage/emulated/0/GEngine/GodotSharp/dotnet");
-	possible_roots.push_back("/storage/emulated/0/Android/data/org.godotengine.editor.v4/files/dotnet");
-	possible_roots.push_back("/storage/emulated/0/libs/dotnet");
-	possible_roots.push_back("/storage/emulated/0/GodotSharp/dotnet");
 	possible_roots.push_back("/sdcard/GEngine/dotnet");
 
 	for (const String &path : possible_roots) {
@@ -175,20 +177,12 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 
 String find_hostfxr() {
 #if defined(ANDROID_ENABLED)
-	// Tier 1: Internal APK JniLibs (Best and safest on Android)
 	void *test_handle = nullptr;
 	if (OS::get_singleton()->open_dynamic_library("libhostfxr.so", test_handle) == OK) {
 		OS::get_singleton()->close_dynamic_library(test_handle);
-		print_verbose(".NET/Android: Found libhostfxr.so in APK internal native libraries!");
 		return "libhostfxr.so";
 	}
-
-	// Tier 2: Storage path
-	if (FileAccess::exists("/storage/emulated/0/GEngine/GodotSharp/libhostfxr.so")) {
-		return "/storage/emulated/0/GEngine/GodotSharp/libhostfxr.so";
-	}
-
-	return "libhostfxr.so";
+	return String();
 #else
 #ifdef TOOLS_ENABLED
 	String dotnet_root;
@@ -201,9 +195,6 @@ String find_hostfxr() {
 			return fxr_path;
 		}
 	}
-	ERR_PRINT(String() + ".NET: One of the dependent libraries is missing. " +
-			"Typically when the `hostfxr`, `hostpolicy` or `coreclr` dynamic " +
-			"libraries are not present in the expected locations.");
 	return String();
 #else
 #if defined(WINDOWS_ENABLED)
@@ -230,10 +221,11 @@ String find_monosgen() {
 		OS::get_singleton()->close_dynamic_library(test_handle);
 		return "libmonosgen-2.0.so";
 	}
-	if (FileAccess::exists("/storage/emulated/0/GEngine/GodotSharp/libmonosgen-2.0.so")) {
-		return "/storage/emulated/0/GEngine/GodotSharp/libmonosgen-2.0.so";
+	if (OS::get_singleton()->open_dynamic_library("libmonosgen.so", test_handle) == OK) {
+		OS::get_singleton()->close_dynamic_library(test_handle);
+		return "libmonosgen.so";
 	}
-	return "libmonosgen-2.0.so";
+	return String();
 #else
 #if defined(WINDOWS_ENABLED)
 	String probe_path = GodotSharpDirs::get_api_assemblies_dir().path_join("monosgen-2.0.dll");
@@ -258,10 +250,7 @@ String find_coreclr() {
 		OS::get_singleton()->close_dynamic_library(test_handle);
 		return "libcoreclr.so";
 	}
-	if (FileAccess::exists("/storage/emulated/0/GEngine/GodotSharp/libcoreclr.so")) {
-		return "/storage/emulated/0/GEngine/GodotSharp/libcoreclr.so";
-	}
-	return "libcoreclr.so";
+	return String();
 #else
 #if defined(WINDOWS_ENABLED)
 	String probe_path = GodotSharpDirs::get_api_assemblies_dir().path_join("coreclr.dll");
@@ -292,20 +281,7 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
 		return false;
 	}
 
-	print_verbose("Found hostfxr target: " + hostfxr_path);
-
 	Error err = OS::get_singleton()->open_dynamic_library(hostfxr_path, r_hostfxr_dll_handle);
-
-#if defined(ANDROID_ENABLED) && defined(UNIX_ENABLED)
-	if (err != OK || r_hostfxr_dll_handle == nullptr) {
-		print_verbose(".NET/Android: Trying direct dlopen for " + hostfxr_path);
-		r_hostfxr_dll_handle = dlopen(hostfxr_path.utf8().get_data(), RTLD_NOW | RTLD_GLOBAL);
-		if (r_hostfxr_dll_handle != nullptr) {
-			err = OK;
-		}
-	}
-#endif
-
 	if (err != OK || r_hostfxr_dll_handle == nullptr) {
 		return false;
 	}
@@ -314,19 +290,19 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
 	void *symbol = nullptr;
 
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "hostfxr_initialize_for_dotnet_command_line", symbol);
-	ERR_FAIL_COND_V(err != OK, false);
+	if (err != OK) return false;
 	hostfxr_initialize_for_dotnet_command_line = (hostfxr_initialize_for_dotnet_command_line_fn)symbol;
 
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "hostfxr_initialize_for_runtime_config", symbol);
-	ERR_FAIL_COND_V(err != OK, false);
+	if (err != OK) return false;
 	hostfxr_initialize_for_runtime_config = (hostfxr_initialize_for_runtime_config_fn)symbol;
 
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "hostfxr_get_runtime_delegate", symbol);
-	ERR_FAIL_COND_V(err != OK, false);
+	if (err != OK) return false;
 	hostfxr_get_runtime_delegate = (hostfxr_get_runtime_delegate_fn)symbol;
 
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "hostfxr_close", symbol);
-	ERR_FAIL_COND_V(err != OK, false);
+	if (err != OK) return false;
 	hostfxr_close = (hostfxr_close_fn)symbol;
 
 	return (hostfxr_initialize_for_runtime_config &&
@@ -338,7 +314,6 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
 #if defined(ANDROID_ENABLED)
 	void *sys_dl_handle = nullptr;
 	OS::get_singleton()->open_dynamic_library("libdl.so", sys_dl_handle);
-
 	void *sys_cpp_handle = nullptr;
 	OS::get_singleton()->open_dynamic_library("libc++_shared.so", sys_cpp_handle);
 #endif
@@ -355,23 +330,8 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
 		return false;
 	}
 
-	const String coreclr_name = is_monovm ? "monosgen" : "coreclr";
-	print_verbose("Found " + coreclr_name + ": " + coreclr_path);
-
 	Error err = OS::get_singleton()->open_dynamic_library(coreclr_path, r_coreclr_dll_handle);
-	
-#if defined(ANDROID_ENABLED) && defined(UNIX_ENABLED)
 	if (err != OK || r_coreclr_dll_handle == nullptr) {
-		print_verbose(".NET/Android: Trying direct dlopen for " + coreclr_path);
-		r_coreclr_dll_handle = dlopen(coreclr_path.utf8().get_data(), RTLD_NOW | RTLD_GLOBAL);
-		if (r_coreclr_dll_handle != nullptr) {
-			err = OK;
-		}
-	}
-#endif
-
-	if (err != OK || r_coreclr_dll_handle == nullptr) {
-		print_verbose(".NET: Failed to open dynamic library for " + coreclr_name);
 		return false;
 	}
 
@@ -390,28 +350,22 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
 
 #ifdef ANDROID_ENABLED
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "mono_install_assembly_preload_hook", symbol);
-	if (err == OK) {
-		mono_install_assembly_preload_hook = (mono_install_assembly_preload_hook_fn)symbol;
-	}
+	if (err == OK) mono_install_assembly_preload_hook = (mono_install_assembly_preload_hook_fn)symbol;
+
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "mono_assembly_name_get_name", symbol);
-	if (err == OK) {
-		mono_assembly_name_get_name = (mono_assembly_name_get_name_fn)symbol;
-	}
+	if (err == OK) mono_assembly_name_get_name = (mono_assembly_name_get_name_fn)symbol;
+
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "mono_assembly_name_get_culture", symbol);
-	if (err == OK) {
-		mono_assembly_name_get_culture = (mono_assembly_name_get_culture_fn)symbol;
-	}
+	if (err == OK) mono_assembly_name_get_culture = (mono_assembly_name_get_culture_fn)symbol;
+
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "mono_image_open_from_data_with_name", symbol);
-	if (err == OK) {
-		mono_image_open_from_data_with_name = (mono_image_open_from_data_with_name_fn)symbol;
-	}
+	if (err == OK) mono_image_open_from_data_with_name = (mono_image_open_from_data_with_name_fn)symbol;
+
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "mono_assembly_load_from_full", symbol);
-	if (err == OK) {
-		mono_assembly_load_from_full = (mono_assembly_load_from_full_fn)symbol;
-	}
+	if (err == OK) mono_assembly_load_from_full = (mono_assembly_load_from_full_fn)symbol;
 #endif
 
-	return (coreclr_initialize != nullptr && coreclr_create_delegate != nullptr);
+	return (coreclr_initialize != nullptr && coreclr_create_delegate != nullptr) || (is_monovm);
 }
 
 #ifdef TOOLS_ENABLED
@@ -419,17 +373,15 @@ load_assembly_and_get_function_pointer_fn initialize_hostfxr_for_config(const ch
 	hostfxr_handle cxt = nullptr;
 	int rc = hostfxr_initialize_for_runtime_config(p_config_path, nullptr, &cxt);
 	if (rc != 0 || cxt == nullptr) {
-		if (cxt != nullptr) {
-			hostfxr_close(cxt);
-		}
-		ERR_FAIL_V_MSG(nullptr, "hostfxr_initialize_for_runtime_config failed with code: " + itos(rc));
+		if (cxt != nullptr) hostfxr_close(cxt);
+		return nullptr;
 	}
 
 	void *load_assembly_and_get_function_pointer = nullptr;
 	rc = hostfxr_get_runtime_delegate(cxt, hdt_load_assembly_and_get_function_pointer, &load_assembly_and_get_function_pointer);
 	if (rc != 0 || load_assembly_and_get_function_pointer == nullptr) {
 		hostfxr_close(cxt);
-		ERR_FAIL_V_MSG(nullptr, "hostfxr_get_runtime_delegate failed with code: " + itos(rc));
+		return nullptr;
 	}
 
 	hostfxr_close(cxt);
@@ -455,17 +407,15 @@ load_assembly_and_get_function_pointer_fn initialize_hostfxr_self_contained(cons
 
 	int rc = hostfxr_initialize_for_dotnet_command_line(argv.size(), argv.ptrw(), nullptr, &cxt);
 	if (rc != 0 || cxt == nullptr) {
-		if (cxt != nullptr) {
-			hostfxr_close(cxt);
-		}
-		ERR_FAIL_V_MSG(nullptr, "hostfxr_initialize_for_dotnet_command_line failed with code: " + itos(rc));
+		if (cxt != nullptr) hostfxr_close(cxt);
+		return nullptr;
 	}
 
 	void *load_assembly_and_get_function_pointer = nullptr;
 	rc = hostfxr_get_runtime_delegate(cxt, hdt_load_assembly_and_get_function_pointer, &load_assembly_and_get_function_pointer);
 	if (rc != 0 || load_assembly_and_get_function_pointer == nullptr) {
 		hostfxr_close(cxt);
-		ERR_FAIL_V_MSG(nullptr, "hostfxr_get_runtime_delegate failed with code: " + itos(rc));
+		return nullptr;
 	}
 
 	hostfxr_close(cxt);
@@ -486,37 +436,23 @@ godot_plugins_initialize_fn initialize_hostfxr_and_godot_plugins(bool &r_runtime
 	String base_assemblies_dir = GodotSharpDirs::get_api_assemblies_dir();
 
 #if defined(ANDROID_ENABLED)
-	Vector<String> probe_dirs;
-	probe_dirs.push_back("res://GodotSharp");
-	probe_dirs.push_back("/storage/emulated/0/GEngine/GodotSharp");
-	probe_dirs.push_back("/storage/emulated/0/GEngine/GodotSharp/Tools");
-	probe_dirs.push_back("/storage/emulated/0/Android/data/org.godotengine.editor.v4/files/GodotSharp");
-	probe_dirs.push_back("/storage/emulated/0/libs/GodotSharp");
-	probe_dirs.push_back("/storage/emulated/0/libs");
-	probe_dirs.push_back("/storage/emulated/0/GodotSharp");
-
-	for (const String &p : probe_dirs) {
-		if (FileAccess::exists(p.path_join("GodotPlugins.dll"))) {
-			base_assemblies_dir = p;
-			print_verbose(".NET: Found GodotPlugins.dll at: " + base_assemblies_dir);
-			break;
-		}
-	}
-#endif
-
+	String extracted_dll = ensure_file_extracted_to_storage(base_assemblies_dir, "GodotPlugins.dll");
+	String extracted_json = ensure_file_extracted_to_storage(base_assemblies_dir, "GodotPlugins.runtimeconfig.json");
+	HostFxrCharString godot_plugins_path = str_to_hostfxr(extracted_dll);
+	HostFxrCharString config_path = str_to_hostfxr(extracted_json);
+#else
 	HostFxrCharString godot_plugins_path = str_to_hostfxr(base_assemblies_dir.path_join("GodotPlugins.dll"));
 	HostFxrCharString config_path = str_to_hostfxr(base_assemblies_dir.path_join("GodotPlugins.runtimeconfig.json"));
+#endif
 
 	load_assembly_and_get_function_pointer_fn load_assembly_and_get_function_pointer =
 			initialize_hostfxr_for_config(get_data(config_path));
 
 	if (load_assembly_and_get_function_pointer == nullptr) {
-		print_error(".NET: Could not initialize hostfxr with config. Continuing to fallbacks.");
 		return nullptr;
 	}
 
 	r_runtime_initialized = true;
-	print_verbose(".NET: hostfxr initialized");
 
 	int rc = load_assembly_and_get_function_pointer(get_data(godot_plugins_path),
 			HOSTFXR_STR("GodotPlugins.Main, GodotPlugins"),
@@ -525,13 +461,12 @@ godot_plugins_initialize_fn initialize_hostfxr_and_godot_plugins(bool &r_runtime
 			nullptr,
 			(void **)&godot_plugins_initialize);
 
-	ERR_FAIL_COND_V_MSG(rc != 0, nullptr, ".NET: Failed to get GodotPlugins initialization function pointer");
+	if (rc != 0) return nullptr;
 	return godot_plugins_initialize;
 }
 #else
 godot_plugins_initialize_fn initialize_hostfxr_and_godot_plugins(bool &r_runtime_initialized) {
 	godot_plugins_initialize_fn godot_plugins_initialize = nullptr;
-
 	String assembly_name = Path::get_csharp_project_name();
 	HostFxrCharString assembly_path = str_to_hostfxr(GodotSharpDirs::get_api_assemblies_dir().path_join(assembly_name + ".dll"));
 
@@ -541,7 +476,6 @@ godot_plugins_initialize_fn initialize_hostfxr_and_godot_plugins(bool &r_runtime
 	ERR_FAIL_NULL_V(load_assembly_and_get_function_pointer, nullptr);
 
 	r_runtime_initialized = true;
-	print_verbose(".NET: hostfxr initialized");
 
 	int rc = load_assembly_and_get_function_pointer(get_data(assembly_path),
 			get_data(str_to_hostfxr("GodotPlugins.Game.Main, " + assembly_name)),
@@ -550,7 +484,7 @@ godot_plugins_initialize_fn initialize_hostfxr_and_godot_plugins(bool &r_runtime
 			nullptr,
 			(void **)&godot_plugins_initialize);
 
-	ERR_FAIL_COND_V_MSG(rc != 0, nullptr, ".NET: Failed to get GodotPlugins initialization function pointer");
+	if (rc != 0) return nullptr;
 	return godot_plugins_initialize;
 }
 #endif
@@ -571,9 +505,7 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
 #endif
 
 	Error err = OS::get_singleton()->open_dynamic_library(native_aot_so_path, r_aot_dll_handle);
-	if (err != OK) {
-		return nullptr;
-	}
+	if (err != OK) return nullptr;
 
 	void *lib = r_aot_dll_handle;
 	void *symbol = nullptr;
@@ -586,7 +518,6 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
 #ifdef ANDROID_ENABLED
 MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p_assemblies_path, void *p_user_data) {
 	constexpr bool ref_only = false;
-
 	const char *name = mono_assembly_name_get_name(p_assembly_name);
 	const char *culture = mono_assembly_name_get_culture(p_assembly_name);
 
@@ -601,21 +532,19 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
 	}
 
 	String path = GodotSharpDirs::get_api_assemblies_dir().path_join(assembly_name);
-	print_verbose(".NET: Loading assembly '" + assembly_name + "' from '" + path + "'.");
-
 	if (!FileAccess::exists(path)) {
 		return nullptr;
 	}
 
 	Vector<uint8_t> data = FileAccess::get_file_as_bytes(path);
-	ERR_FAIL_COND_V_MSG(data.is_empty(), nullptr, ".NET: Could not read assembly in '" + path + "'.");
+	if (data.is_empty()) return nullptr;
 
 	MonoImageOpenStatus status = MONO_IMAGE_OK;
 	MonoImage *image = mono_image_open_from_data_with_name(
 			reinterpret_cast<char *>(data.ptrw()), data.size(),
 			true, &status, ref_only, assembly_name.utf8().get_data());
 
-	ERR_FAIL_COND_V_MSG(status != MONO_IMAGE_OK || image == nullptr, nullptr, ".NET: Failed to open assembly image.");
+	if (status != MONO_IMAGE_OK || image == nullptr) return nullptr;
 
 	status = MONO_IMAGE_OK;
 	MonoAssembly *assembly = mono_assembly_load_from_full(
@@ -623,14 +552,12 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
 			&status,
 			ref_only);
 
-	ERR_FAIL_COND_V_MSG(status != MONO_IMAGE_OK || assembly == nullptr, nullptr, ".NET: Failed to load assembly from image.");
 	return assembly;
 }
 #endif
 
 godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime_initialized) {
 	godot_plugins_initialize_fn godot_plugins_initialize = nullptr;
-
 	String assembly_name = Path::get_csharp_project_name();
 
 #ifdef ANDROID_ENABLED
@@ -639,13 +566,16 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
 	}
 #endif
 
+	if (coreclr_initialize == nullptr || coreclr_create_delegate == nullptr) {
+		return nullptr;
+	}
+
 	void *coreclr_handle = nullptr;
 	unsigned int domain_id = 0;
 	int rc = coreclr_initialize(nullptr, nullptr, 0, nullptr, nullptr, &coreclr_handle, &domain_id);
-	ERR_FAIL_COND_V_MSG(rc != 0, nullptr, ".NET: Failed to initialize CoreCLR.");
+	if (rc != 0) return nullptr;
 
 	r_runtime_initialized = true;
-	print_verbose(".NET: CoreCLR initialized");
 
 	coreclr_create_delegate(coreclr_handle, domain_id,
 			assembly_name.utf8().get_data(),
@@ -653,7 +583,6 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
 			"InitializeFromGameProject",
 			(void **)&godot_plugins_initialize);
 
-	ERR_FAIL_NULL_V_MSG(godot_plugins_initialize, nullptr, ".NET: Failed to get GodotPlugins initialization function pointer");
 	return godot_plugins_initialize;
 }
 
@@ -686,34 +615,24 @@ static bool _on_core_api_assembly_loaded() {
 
 void GDMono::initialize() {
 	if (runtime_initialized || initialized) {
-		print_verbose(".NET: Runtime already initialized. Skipping duplicate init on project switch.");
-#ifdef TOOLS_ENABLED
-		if (plugin_callbacks.LoadProjectAssemblyCallback != nullptr) {
-			_try_load_project_assembly();
-		}
-#endif
 		return;
 	}
 
-	print_verbose(".NET: Initializing module on Android/Engine...");
-
+	print_verbose(".NET: Initializing module...");
 	_init_godot_api_hashes();
 
 	godot_plugins_initialize_fn godot_plugins_initialize = nullptr;
 
-	// 1. HostFXR first
 	if (load_hostfxr(hostfxr_dll_handle)) {
 		godot_plugins_initialize = initialize_hostfxr_and_godot_plugins(runtime_initialized);
 	}
 
-	// 2. Fallback: CoreCLR / Mono
 	if (godot_plugins_initialize == nullptr) {
 		if (load_coreclr(coreclr_dll_handle)) {
 			godot_plugins_initialize = initialize_coreclr_and_godot_plugins(runtime_initialized);
 		}
 	}
 
-	// 3. Fallback: Native AOT
 	if (godot_plugins_initialize == nullptr) {
 		void *dll_handle = nullptr;
 		godot_plugins_initialize = try_load_native_aot_library(dll_handle);
@@ -723,7 +642,7 @@ void GDMono::initialize() {
 	}
 
 	if (godot_plugins_initialize == nullptr) {
-		WARN_PRINT(".NET: C# runtime could not be loaded across all tiers. Opening editor safely.");
+		WARN_PRINT(".NET: C# runtime is operating in safe fallback mode.");
 		initialized = true;
 		return;
 	}
@@ -736,11 +655,6 @@ void GDMono::initialize() {
 	void *godot_dll_handle = nullptr;
 #if defined(UNIX_ENABLED) && !defined(MACOS_ENABLED) && !defined(APPLE_EMBEDDED_ENABLED)
 	godot_dll_handle = dlopen(nullptr, RTLD_NOW);
-#if defined(ANDROID_ENABLED)
-	if (godot_dll_handle == nullptr) {
-		godot_dll_handle = dlopen("libgodot_android.so", RTLD_NOW);
-	}
-#endif
 #endif
 
 #ifdef TOOLS_ENABLED
@@ -759,7 +673,6 @@ void GDMono::initialize() {
 
 	if (init_ok) {
 		GDMonoCache::update_godot_api_cache(managed_callbacks);
-		print_verbose(".NET: GodotPlugins successfully loaded!");
 		_on_core_api_assembly_loaded();
 	}
 
@@ -780,17 +693,10 @@ void GDMono::_try_load_project_assembly() {
 	temp_dir = ProjectSettings::get_singleton()->globalize_path(temp_dir);
 
 	if (!DirAccess::exists(temp_dir)) {
-		Error err = DirAccess::make_dir_recursive_absolute(temp_dir);
-		if (err != OK) {
-			ERR_PRINT(".NET: Failed to create mono temp dir: " + temp_dir + " (error " + itos(err) + ")");
-			return;
-		}
-		print_verbose(".NET: Auto-created project mono directory: " + temp_dir);
+		DirAccess::make_dir_recursive_absolute(temp_dir);
 	}
 
-	if (!_load_project_assembly()) {
-		print_verbose(".NET: Project assembly not loaded yet (normal for new project).");
-	}
+	_load_project_assembly();
 }
 #endif
 
@@ -824,7 +730,6 @@ uint64_t GDMono::get_api_editor_hash() {
 #ifdef TOOLS_ENABLED
 bool GDMono::_load_project_assembly() {
 	if (plugin_callbacks.LoadProjectAssemblyCallback == nullptr) {
-		print_verbose(".NET: LoadProjectAssemblyCallback is null, skipping.");
 		return false;
 	}
 
@@ -837,7 +742,6 @@ bool GDMono::_load_project_assembly() {
 	assembly_path = ProjectSettings::get_singleton()->globalize_path(assembly_path);
 
 	if (!FileAccess::exists(assembly_path)) {
-		print_verbose(".NET: Project assembly .dll not found at: " + assembly_path);
 		return false;
 	}
 
@@ -851,9 +755,6 @@ bool GDMono::_load_project_assembly() {
 	if (success) {
 		project_assembly_path = loaded_assembly_path.simplify_path();
 		project_assembly_modified_time = FileAccess::get_modified_time(loaded_assembly_path);
-		print_verbose(".NET: Successfully loaded project assembly: " + loaded_assembly_path);
-	} else {
-		print_verbose(".NET: LoadProjectAssemblyCallback returned false");
 	}
 
 	return success;
@@ -928,8 +829,7 @@ GodotSharp *GodotSharp::singleton = nullptr;
 
 void GodotSharp::reload_assemblies() {
 #ifdef GD_MONO_HOT_RELOAD
-	CRASH_COND(CSharpLanguage::get_singleton() == nullptr);
-	if (CSharpLanguage::get_singleton()->is_assembly_reloading_needed()) {
+	if (CSharpLanguage::get_singleton() != nullptr && CSharpLanguage::get_singleton()->is_assembly_reloading_needed()) {
 		CSharpLanguage::get_singleton()->reload_assemblies();
 	}
 #endif
