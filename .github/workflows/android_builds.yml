@@ -44,8 +44,8 @@ jobs:
         run: |
           python ./misc/scripts/install_swappy_android.py
 
-      # 1. DOWNLOAD & EXTRACT OFFICIAL MICROSOFT ANDROID RUNTIME PACKS
-      - name: Download Official Microsoft .NET 8 Android-ARM64 Native Runtime (.so)
+      # 1. DOWNLOAD LAHAT NG OFFICIAL MICROSOFT .NET 8 ANDROID ARM64 RUNTIME PACKS (hostfxr, hostpolicy, monosgen, bcl)
+      - name: Download All Android Native .so Libraries (libhostfxr, libmonosgen, libcoreclr, etc.)
         shell: bash
         run: |
           set -e
@@ -53,51 +53,70 @@ jobs:
           cd "$TEMP_DIR"
 
           DEST_JNI="$GITHUB_WORKSPACE/platform/android/java/editor/src/main/jniLibs/arm64-v8a"
+          DEST_API="$GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Api"
+          DEST_TOOLS="$GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Tools"
+
           mkdir -p "$DEST_JNI"
-          mkdir -p "$GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Api"
-          mkdir -p "$GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Tools"
+          mkdir -p "$DEST_API"
+          mkdir -p "$DEST_TOOLS"
 
-          echo "=== Resolving and Downloading .NET 8 Mono Android-ARM64 Runtime ==="
-          VERSIONS=("8.0.12" "8.0.10" "8.0.8" "8.0.0")
-          DOWNLOAD_SUCCESS=false
+          download_pkg() {
+            local pkg_name="$1"
+            local out_name="$2"
+            local versions=("8.0.12" "8.0.11" "8.0.10" "8.0.8" "8.0.0")
+            local success=false
 
-          for VER in "${VERSIONS[@]}"; do
-            URL="https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.runtime.mono.android-arm64/${VER}/microsoft.netcore.app.runtime.mono.android-arm64.${VER}.nupkg"
-            echo "Attempting to download version: ${VER}..."
-            if curl -f -sSL -o mono_runtime.nupkg "$URL"; then
-              echo "Successfully downloaded Mono Android Runtime version ${VER}"
-              DOWNLOAD_SUCCESS=true
-              break
+            for ver in "${versions[@]}"; do
+              local url="https://api.nuget.org/v3-flatcontainer/${pkg_name}/${ver}/${pkg_name}.${ver}.nupkg"
+              echo "Downloading ${pkg_name} version ${ver}..."
+              if curl -f -sSL -o "$out_name" "$url"; then
+                echo "-> Downloaded ${pkg_name} successfully!"
+                success=true
+                break
+              fi
+            done
+
+            if [ "$success" = true ]; then
+              unzip -q -o "$out_name" -d "${out_name}_extracted"
+            else
+              echo "Warning: Could not download ${pkg_name}"
             fi
-          done
+          }
 
-          if [ "$DOWNLOAD_SUCCESS" = false ]; then
-            echo "Error: Failed to download Mono Android-ARM64 runtime package."
-            exit 1
+          echo "=== 1. Downloading Mono Android Runtime & BCL (.so + .dll) ==="
+          download_pkg "microsoft.netcore.app.runtime.mono.android-arm64" "mono_runtime.nupkg"
+
+          echo "=== 2. Downloading Real Android libhostfxr.so ==="
+          download_pkg "runtime.android-arm64.microsoft.netcore.dotnethostresolver" "hostfxr.nupkg"
+
+          echo "=== 3. Downloading Real Android libhostpolicy.so ==="
+          download_pkg "runtime.android-arm64.microsoft.netcore.dotnethostpolicy" "hostpolicy.nupkg"
+
+          echo "=== 4. Downloading Real Android DotNet AppHost ==="
+          download_pkg "runtime.android-arm64.microsoft.netcore.dotnethost" "dotnethost.nupkg"
+
+          echo "=========================================================="
+          echo " COPYING ALL EXTRACTED .SO FILES INTO jniLibs/arm64-v8a   "
+          echo "=========================================================="
+          find . -type f -name "*.so" -exec cp -v {} "$DEST_JNI/" \;
+
+          # Kopyahin ang lahat ng .dll BCL assemblies
+          if [ -d "mono_runtime.nupkg_extracted/runtimes/android-arm64/lib" ]; then
+            find mono_runtime.nupkg_extracted/runtimes/android-arm64/lib/ -type f -name "*.dll" -exec cp -v {} "$DEST_API/" \;
           fi
 
-          unzip -q -o mono_runtime.nupkg -d mono_extracted
-
-          # Copy all Android arm64 shared libraries (.so)
-          find mono_extracted/ -type f -name "*.so" -exec cp -v {} "$DEST_JNI/" \;
-
-          # Extract and copy BCL assemblies into GodotSharp assets directory
-          find mono_extracted/runtimes/android-arm64/lib/net8.0/ -type f -name "*.dll" -exec cp -v {} "$GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Api/" \; || true
-
-          # Extract Android NDK libc++_shared.so
-          NDK_LIBCXX=$(find "$ANDROID_SDK_ROOT/ndk" -name "libc++_shared.so" | grep "aarch64" | head -n 1 || true)
-          if [ -n "$NDK_LIBCXX" ] && [ -f "$NDK_LIBCXX" ]; then
-            cp -v "$NDK_LIBCXX" "$DEST_JNI/"
-            cp -v "$NDK_LIBCXX" "$DEST_JNI/libgcc_s.so.1"
-            echo "Copied libc++_shared.so from Android NDK."
-          fi
-
-          # Ensure libmonosgen symlink/alias is present
-          if [ -f "$DEST_JNI/libmonosgen-2.0.so" ] && [ ! -f "$DEST_JNI/libmonosgen.so" ]; then
+          # Mono aliases
+          if [ -f "$DEST_JNI/libmonosgen-2.0.so" ]; then
             cp -v "$DEST_JNI/libmonosgen-2.0.so" "$DEST_JNI/libmonosgen.so"
           fi
 
-          echo "=== Listing Native Libraries in jniLibs/arm64-v8a ==="
+          # NDK libc++_shared.so
+          NDK_LIBCXX=$(find "$ANDROID_SDK_ROOT/ndk" -name "libc++_shared.so" | grep "aarch64" | head -n 1 || true)
+          if [ -n "$NDK_LIBCXX" ] && [ -f "$NDK_LIBCXX" ]; then
+            cp -v "$NDK_LIBCXX" "$DEST_JNI/"
+          fi
+
+          echo "=== Complete Native .so Libraries in jniLibs/arm64-v8a ==="
           ls -lh "$DEST_JNI/"
 
       # 2. Build Host Linux Editor & Generate Mono Glue
@@ -116,11 +135,14 @@ jobs:
         run: |
           scons platform=android target=editor arch=arm64 ${{ env.SCONS_FLAGS }} -j$(nproc)
 
-      # 5. Bundle GodotSharp Assemblies into APK Assets
+      # 5. Isama ang GodotSharp Assemblies sa Assets
       - name: Bundle GodotSharp inside Android Assets
         run: |
+          DEST_ASSETS="platform/android/java/editor/src/main/assets/GodotSharp"
+          mkdir -p "$DEST_ASSETS"
+
           if [ -d "bin/GodotSharp" ]; then
-            cp -rv bin/GodotSharp/* platform/android/java/editor/src/main/assets/GodotSharp/
+            cp -rv bin/GodotSharp/* "$DEST_ASSETS/"
           fi
 
           BUILD_GRADLE="platform/android/java/editor/build.gradle"
@@ -136,7 +158,7 @@ jobs:
           fi
 
           echo "=== GodotSharp Assets Bundled ==="
-          ls -la platform/android/java/editor/src/main/assets/GodotSharp/
+          ls -la "$DEST_ASSETS/"
 
       # 6. Generate All-in-One APK
       - name: Generate Android Editor APK
