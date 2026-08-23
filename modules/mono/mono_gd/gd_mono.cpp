@@ -5,6 +5,28 @@
 /* GODOT ENGINE                                                           */
 /* https://godotengine.org                                                */
 /**************************************************************************/
+/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
+/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "gd_mono.h"
 
@@ -153,47 +175,20 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 
 String find_hostfxr() {
 #if defined(ANDROID_ENABLED)
-	// Tier 1: Check internal APK libraries
+	// Tier 1: Internal APK JniLibs (Best and safest on Android)
 	void *test_handle = nullptr;
 	if (OS::get_singleton()->open_dynamic_library("libhostfxr.so", test_handle) == OK) {
 		OS::get_singleton()->close_dynamic_library(test_handle);
-		print_verbose(".NET: Found libhostfxr.so in APK internal native libraries!");
+		print_verbose(".NET/Android: Found libhostfxr.so in APK internal native libraries!");
 		return "libhostfxr.so";
 	}
 
-	// Tier 2-4: Storage locations
-	Vector<String> android_candidates;
-	android_candidates.push_back("/storage/emulated/0/GEngine/GodotSharp/libhostfxr.so");
-	android_candidates.push_back("/storage/emulated/0/GEngine/GodotSharp/host/fxr");
-	android_candidates.push_back("/storage/emulated/0/Android/data/org.godotengine.editor.v4/files/GodotSharp/libhostfxr.so");
-	android_candidates.push_back("/storage/emulated/0/libs/libhostfxr.so");
-	android_candidates.push_back("/storage/emulated/0/libs/GodotSharp/libhostfxr.so");
-	android_candidates.push_back("/storage/emulated/0/GodotSharp/libhostfxr.so");
-
-	for (const String &path : android_candidates) {
-		if (FileAccess::exists(path)) {
-			print_verbose(".NET: Found hostfxr at storage: " + path);
-			return path;
-		}
-		if (DirAccess::exists(path)) {
-			Ref<DirAccess> da = DirAccess::open(path);
-			if (da.is_valid()) {
-				da->list_dir_begin();
-				String dir_name = da->get_next();
-				while (!dir_name.is_empty()) {
-					if (da->current_is_dir() && !dir_name.begins_with(".")) {
-						String full_path = path.path_join(dir_name).path_join("libhostfxr.so");
-						if (FileAccess::exists(full_path)) {
-							print_verbose(".NET: Found hostfxr in subfolder: " + full_path);
-							return full_path;
-						}
-					}
-					dir_name = da->get_next();
-				}
-			}
-		}
+	// Tier 2: Storage path
+	if (FileAccess::exists("/storage/emulated/0/GEngine/GodotSharp/libhostfxr.so")) {
+		return "/storage/emulated/0/GEngine/GodotSharp/libhostfxr.so";
 	}
-	return "libhostfxr.so"; // last resort
+
+	return "libhostfxr.so";
 #else
 #ifdef TOOLS_ENABLED
 	String dotnet_root;
@@ -238,9 +233,6 @@ String find_monosgen() {
 	if (FileAccess::exists("/storage/emulated/0/GEngine/GodotSharp/libmonosgen-2.0.so")) {
 		return "/storage/emulated/0/GEngine/GodotSharp/libmonosgen-2.0.so";
 	}
-	if (FileAccess::exists("/storage/emulated/0/libs/libmonosgen-2.0.so")) {
-		return "/storage/emulated/0/libs/libmonosgen-2.0.so";
-	}
 	return "libmonosgen-2.0.so";
 #else
 #if defined(WINDOWS_ENABLED)
@@ -261,6 +253,14 @@ String find_monosgen() {
 
 String find_coreclr() {
 #if defined(ANDROID_ENABLED)
+	void *test_handle = nullptr;
+	if (OS::get_singleton()->open_dynamic_library("libcoreclr.so", test_handle) == OK) {
+		OS::get_singleton()->close_dynamic_library(test_handle);
+		return "libcoreclr.so";
+	}
+	if (FileAccess::exists("/storage/emulated/0/GEngine/GodotSharp/libcoreclr.so")) {
+		return "/storage/emulated/0/GEngine/GodotSharp/libcoreclr.so";
+	}
 	return "libcoreclr.so";
 #else
 #if defined(WINDOWS_ENABLED)
@@ -281,7 +281,6 @@ String find_coreclr() {
 
 bool load_hostfxr(void *&r_hostfxr_dll_handle) {
 #if defined(ANDROID_ENABLED)
-	// I-preload ang system dl at c++ runtime para maiwasan ang libdl.so.2 missing error
 	void *dl_handle = nullptr;
 	OS::get_singleton()->open_dynamic_library("libdl.so", dl_handle);
 	void *cxx_handle = nullptr;
@@ -296,9 +295,21 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
 	print_verbose("Found hostfxr target: " + hostfxr_path);
 
 	Error err = OS::get_singleton()->open_dynamic_library(hostfxr_path, r_hostfxr_dll_handle);
-	if (err != OK) {
+
+#if defined(ANDROID_ENABLED) && defined(UNIX_ENABLED)
+	if (err != OK || r_hostfxr_dll_handle == nullptr) {
+		print_verbose(".NET/Android: Trying direct dlopen for " + hostfxr_path);
+		r_hostfxr_dll_handle = dlopen(hostfxr_path.utf8().get_data(), RTLD_NOW | RTLD_GLOBAL);
+		if (r_hostfxr_dll_handle != nullptr) {
+			err = OK;
+		}
+	}
+#endif
+
+	if (err != OK || r_hostfxr_dll_handle == nullptr) {
 		return false;
 	}
+
 	void *lib = r_hostfxr_dll_handle;
 	void *symbol = nullptr;
 
@@ -325,7 +336,6 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
 
 bool load_coreclr(void *&r_coreclr_dll_handle) {
 #if defined(ANDROID_ENABLED)
-	// 1. I-preload ang basic Android system libraries para masagot ang libdl.so.2 at libgcc_s dependencies
 	void *sys_dl_handle = nullptr;
 	OS::get_singleton()->open_dynamic_library("libdl.so", sys_dl_handle);
 
@@ -351,9 +361,8 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
 	Error err = OS::get_singleton()->open_dynamic_library(coreclr_path, r_coreclr_dll_handle);
 	
 #if defined(ANDROID_ENABLED) && defined(UNIX_ENABLED)
-	// Fallback para sa Android native linker gamit ang RTLD_GLOBAL
 	if (err != OK || r_coreclr_dll_handle == nullptr) {
-		print_verbose(".NET/Android: Trying direct dlopen fallback for " + coreclr_path);
+		print_verbose(".NET/Android: Trying direct dlopen for " + coreclr_path);
 		r_coreclr_dll_handle = dlopen(coreclr_path.utf8().get_data(), RTLD_NOW | RTLD_GLOBAL);
 		if (r_coreclr_dll_handle != nullptr) {
 			err = OK;
@@ -478,13 +487,13 @@ godot_plugins_initialize_fn initialize_hostfxr_and_godot_plugins(bool &r_runtime
 
 #if defined(ANDROID_ENABLED)
 	Vector<String> probe_dirs;
+	probe_dirs.push_back("res://GodotSharp");
 	probe_dirs.push_back("/storage/emulated/0/GEngine/GodotSharp");
 	probe_dirs.push_back("/storage/emulated/0/GEngine/GodotSharp/Tools");
 	probe_dirs.push_back("/storage/emulated/0/Android/data/org.godotengine.editor.v4/files/GodotSharp");
 	probe_dirs.push_back("/storage/emulated/0/libs/GodotSharp");
 	probe_dirs.push_back("/storage/emulated/0/libs");
 	probe_dirs.push_back("/storage/emulated/0/GodotSharp");
-	probe_dirs.push_back("res://GodotSharp");
 
 	for (const String &p : probe_dirs) {
 		if (FileAccess::exists(p.path_join("GodotPlugins.dll"))) {
@@ -668,7 +677,6 @@ static bool _on_core_api_assembly_loaded() {
 	debug = true;
 #endif
 
-	// SAFE NULL-CHECK – never call a null managed function
 	if (GDMonoCache::managed_callbacks.GD_OnCoreApiAssemblyLoaded != nullptr) {
 		GDMonoCache::managed_callbacks.GD_OnCoreApiAssemblyLoaded(debug);
 		return true;
@@ -677,11 +685,9 @@ static bool _on_core_api_assembly_loaded() {
 }
 
 void GDMono::initialize() {
-	// === CRITICAL: prevent double-init crash on Android project switch ===
 	if (runtime_initialized || initialized) {
 		print_verbose(".NET: Runtime already initialized. Skipping duplicate init on project switch.");
 #ifdef TOOLS_ENABLED
-		// Only try to load project assembly if managed side is fully ready
 		if (plugin_callbacks.LoadProjectAssemblyCallback != nullptr) {
 			_try_load_project_assembly();
 		}
@@ -716,7 +722,6 @@ void GDMono::initialize() {
 		}
 	}
 
-	// Non-fatal: editor can still open even if C# runtime failed
 	if (godot_plugins_initialize == nullptr) {
 		WARN_PRINT(".NET: C# runtime could not be loaded across all tiers. Opening editor safely.");
 		initialized = true;
@@ -771,7 +776,6 @@ void GDMono::_try_load_project_assembly() {
 		return;
 	}
 
-	// Auto-create .godot/mono temp directory (safe)
 	String temp_dir = GodotSharpDirs::get_res_temp_assemblies_dir();
 	temp_dir = ProjectSettings::get_singleton()->globalize_path(temp_dir);
 
@@ -779,7 +783,6 @@ void GDMono::_try_load_project_assembly() {
 		Error err = DirAccess::make_dir_recursive_absolute(temp_dir);
 		if (err != OK) {
 			ERR_PRINT(".NET: Failed to create mono temp dir: " + temp_dir + " (error " + itos(err) + ")");
-			// do not continue – would crash later
 			return;
 		}
 		print_verbose(".NET: Auto-created project mono directory: " + temp_dir);
@@ -820,7 +823,6 @@ uint64_t GDMono::get_api_editor_hash() {
 
 #ifdef TOOLS_ENABLED
 bool GDMono::_load_project_assembly() {
-	// Ultimate safety: never call a null callback
 	if (plugin_callbacks.LoadProjectAssemblyCallback == nullptr) {
 		print_verbose(".NET: LoadProjectAssemblyCallback is null, skipping.");
 		return false;
@@ -842,7 +844,6 @@ bool GDMono::_load_project_assembly() {
 	String loaded_assembly_path;
 	bool success = false;
 
-	// Extra null check right before the call
 	if (plugin_callbacks.LoadProjectAssemblyCallback != nullptr) {
 		success = plugin_callbacks.LoadProjectAssemblyCallback(assembly_path.utf16().get_data(), &loaded_assembly_path);
 	}
