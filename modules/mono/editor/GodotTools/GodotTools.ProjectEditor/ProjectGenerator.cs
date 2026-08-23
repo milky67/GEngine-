@@ -2,8 +2,6 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Text;
-using Microsoft.Build.Construction;
-using Microsoft.Build.Evaluation;
 using GodotTools.Shared;
 
 namespace GodotTools.ProjectEditor
@@ -14,44 +12,42 @@ namespace GodotTools.ProjectEditor
 
         public static string GodotMinimumRequiredTfm => "net8.0";
 
-        public static ProjectRootElement GenGameProject(string name)
+        public static string GenGameProjectXml(string name)
         {
-            if (name.Length == 0)
+            if (string.IsNullOrEmpty(name))
                 throw new ArgumentException("Project name is empty.", nameof(name));
-
-            var root = ProjectRootElement.Create(NewProjectFileOptions.None);
-
-            root.Sdk = GodotSdkAttrValue;
-
-            var mainGroup = root.AddPropertyGroup();
-            mainGroup.AddProperty("TargetFramework", GodotMinimumRequiredTfm);
-
-            // Non-gradle builds require .NET 9 to match the jar libraries included in the export template.
-            var net9 = mainGroup.AddProperty("TargetFramework", "net9.0");
-            net9.Condition = " '$(GodotTargetPlatform)' == 'android' ";
-
-            mainGroup.AddProperty("EnableDynamicLoading", "true");
 
             string sanitizedName = IdentifierUtils.SanitizeQualifiedIdentifier(name, allowEmptyIdentifiers: true);
 
-            // If the name is not a valid namespace, manually set RootNamespace to a sanitized one.
-            if (sanitizedName != name)
-                mainGroup.AddProperty("RootNamespace", sanitizedName);
+            var sb = new StringBuilder();
+            sb.AppendLine($"<Project Sdk=\"{GodotSdkAttrValue}\">");
+            sb.AppendLine("  <PropertyGroup>");
+            sb.AppendLine($"    <TargetFramework>{GodotMinimumRequiredTfm}</TargetFramework>");
+            sb.AppendLine("    <TargetFramework Condition=\" '$(GodotTargetPlatform)' == 'android' \">net9.0</TargetFramework>");
+            sb.AppendLine("    <EnableDynamicLoading>true</EnableDynamicLoading>");
 
-            return root;
+            if (sanitizedName != name)
+            {
+                sb.AppendLine($"    <RootNamespace>{sanitizedName}</RootNamespace>");
+            }
+
+            sb.AppendLine("  </PropertyGroup>");
+            sb.AppendLine("</Project>");
+
+            return sb.ToString();
         }
 
         public static string GenAndSaveGameProject(string dir, string name)
         {
-            if (name.Length == 0)
+            if (string.IsNullOrEmpty(name))
                 throw new ArgumentException("Project name is empty.", nameof(name));
 
             string path = Path.Combine(dir, name + ".csproj");
 
-            var root = GenGameProject(name);
+            string xmlContent = GenGameProjectXml(name);
 
-            // Save (without BOM)
-            root.Save(path, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            // Save without BOM directly – safe on Android without MSBuild assembly reflection
+            File.WriteAllText(path, xmlContent, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
             return Guid.NewGuid().ToString().ToUpperInvariant();
         }
