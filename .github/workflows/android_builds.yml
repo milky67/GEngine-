@@ -44,8 +44,8 @@ jobs:
         run: |
           python ./misc/scripts/install_swappy_android.py
 
-      # 1. DOWNLOAD AT SETUP NG LAHAT NG NATIVE RUNTIME LIBS (.so) PARA SA ANDROID ARM64
-      - name: Download All Android Native .NET & Mono Libraries (.so)
+      # 1. DOWNLOAD AT EXTRACT NG OFFICIAL MICROSOFT ANDROID ARM64 RUNTIME PACKS
+      - name: Download Official Microsoft .NET 8 Android-ARM64 Native Runtime (.so)
         run: |
           mkdir -p /tmp/dotnet-android-arm64
           cd /tmp/dotnet-android-arm64
@@ -55,28 +55,42 @@ jobs:
           mkdir -p $GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Api
           mkdir -p $GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Tools
 
-          echo "=== Downloading Microsoft.NETCore.App.Runtime.android-arm64 via NuGet ==="
-          dotnet nuget install Microsoft.NETCore.App.Runtime.android-arm64 -Version 8.0.8 -OutputDirectory ./packages || \
-          dotnet nuget install Microsoft.NETCore.App.Runtime.android-arm64 -Version 8.0.0 -OutputDirectory ./packages
+          echo "=== Downloading Microsoft.NETCore.App.Runtime.android-arm64 ==="
+          # Direct v3 FlatContainer download (Standard raw zip format, guaranteed walang redirect error)
+          curl -sSL -o coreclr.nupkg https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.runtime.android-arm64/8.0.8/microsoft.netcore.app.runtime.android-arm64.8.0.8.nupkg || \
+          curl -sSL -o coreclr.nupkg https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.runtime.android-arm64/8.0.0/microsoft.netcore.app.runtime.android-arm64.8.0.0.nupkg
 
-          echo "=== Downloading Microsoft.NETCore.App.Runtime.Mono.android-arm64 via NuGet ==="
-          dotnet nuget install Microsoft.NETCore.App.Runtime.Mono.android-arm64 -Version 8.0.8 -OutputDirectory ./packages || \
-          dotnet nuget install Microsoft.NETCore.App.Runtime.Mono.android-arm64 -Version 8.0.0 -OutputDirectory ./packages || true
+          unzip -q -o coreclr.nupkg -d coreclr_extracted
 
-          find ./packages -name "*.so" -exec cp -v {} $DEST_JNI/ \;
+          echo "=== Downloading Microsoft.NETCore.App.Runtime.Mono.android-arm64 ==="
+          curl -sSL -o mono.nupkg https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.runtime.mono.android-arm64/8.0.8/microsoft.netcore.app.runtime.mono.android-arm64.8.0.8.nupkg || \
+          curl -sSL -o mono.nupkg https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.runtime.mono.android-arm64/8.0.0/microsoft.netcore.app.runtime.mono.android-arm64.8.0.0.nupkg || true
 
+          if [ -f mono.nupkg ]; then
+            unzip -q -o mono.nupkg -d mono_extracted
+          fi
+
+          echo "=== Downloading Linux-ARM64 hostfxr for fallback ==="
+          mkdir -p /tmp/dotnet-arm64
+          curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --runtime dotnet --version 8.0.8 --os linux --arch arm64 --install-dir /tmp/dotnet-arm64 || true
+
+          # Kopyahin ang lahat ng official Android .so libraries
+          find . -name "*.so" -exec cp -v {} $DEST_JNI/ \;
+          find /tmp/dotnet-arm64/ -name "*.so" -exec cp -v {} $DEST_JNI/ \;
+
+          # Kunin ang official libc++_shared.so mula sa Android NDK
           NDK_LIBCXX=$(find $ANDROID_SDK_ROOT/ndk -name "libc++_shared.so" | grep "aarch64" | head -n 1)
           if [ -n "$NDK_LIBCXX" ]; then
             cp -v "$NDK_LIBCXX" $DEST_JNI/
             cp -v "$NDK_LIBCXX" $DEST_JNI/libgcc_s.so.1
-            echo "Copied libc++_shared.so and libgcc_s.so.1 compatibility stub!"
+            echo "Copied libc++_shared.so and created libgcc_s.so.1 compatibility stub!"
           fi
 
           if [ -f "$DEST_JNI/libmonosgen-2.0.so" ]; then
             cp -v "$DEST_JNI/libmonosgen-2.0.so" "$DEST_JNI/libmonosgen.so"
           fi
 
-          echo "=== List of bundled Android ARM64 Native Libraries ==="
+          echo "=== All Real Android .so libraries in jniLibs/arm64-v8a ==="
           ls -lh $DEST_JNI/
 
       # 2. Build Host Linux Editor & Generate Mono Glue
