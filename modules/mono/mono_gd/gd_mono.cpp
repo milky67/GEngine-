@@ -427,7 +427,6 @@ godot_plugins_initialize_fn initialize_hostfxr_and_godot_plugins(bool &r_runtime
 	String base_assemblies_dir = GodotSharpDirs::get_api_assemblies_dir();
 
 #if defined(ANDROID_ENABLED)
-	// 5-Tier Fallback check para sa GodotPlugins.dll
 	Vector<String> probe_dirs;
 	probe_dirs.push_back("/storage/emulated/0/GEngine/GodotSharp");
 	probe_dirs.push_back("/storage/emulated/0/GEngine/GodotSharp/Tools");
@@ -627,29 +626,6 @@ void GDMono::initialize() {
 
 	godot_plugins_initialize_fn godot_plugins_initialize = nullptr;
 
-	String assemblies_dir = GodotSharpDirs::get_api_assemblies_dir();
-
-#if defined(ANDROID_ENABLED)
-	// 5-Tier Directory Resolution
-	if (!DirAccess::exists(assemblies_dir)) {
-		Vector<String> paths;
-		paths.push_back("/storage/emulated/0/GEngine/GodotSharp/Api");
-		paths.push_back("/storage/emulated/0/GEngine/GodotSharp");
-		paths.push_back("/storage/emulated/0/Android/data/org.godotengine.editor.v4/files/GodotSharp");
-		paths.push_back("/storage/emulated/0/libs/GodotSharp");
-		paths.push_back("/storage/emulated/0/libs");
-		paths.push_back("res://GodotSharp/Api");
-
-		for (const String &p : paths) {
-			if (DirAccess::exists(p)) {
-				assemblies_dir = p;
-				print_verbose(".NET: Resolved assemblies directory to: " + assemblies_dir);
-				break;
-			}
-		}
-	}
-#endif
-
 	// 1. Unahin ang HostFXR loader
 	if (load_hostfxr(hostfxr_dll_handle)) {
 		godot_plugins_initialize = initialize_hostfxr_and_godot_plugins(runtime_initialized);
@@ -760,7 +736,7 @@ uint64_t GDMono::get_api_editor_hash() {
 
 #ifdef TOOLS_ENABLED
 bool GDMono::_load_project_assembly() {
-	// NULL SAFETY CHECK: Kung walang LoadProjectAssemblyCallback, huwag tumawag para hindi mag-crash
+	// NULL SAFETY CHECK: Kung walang LoadProjectAssemblyCallback, huwag tumawag
 	if (plugin_callbacks.LoadProjectAssemblyCallback == nullptr) {
 		print_verbose(".NET: LoadProjectAssemblyCallback is null, skipping.");
 		return false;
@@ -783,11 +759,9 @@ bool GDMono::_load_project_assembly() {
 	String loaded_assembly_path;
 	bool success = false;
 
-	try {
+	// Ligtas na pag-invoke nang walang try/catch
+	if (plugin_callbacks.LoadProjectAssemblyCallback != nullptr) {
 		success = plugin_callbacks.LoadProjectAssemblyCallback(assembly_path.utf16().get_data(), &loaded_assembly_path);
-	} catch (...) {
-		print_error(".NET: Exception caught while loading project assembly.");
-		return false;
 	}
 
 	if (success) {
