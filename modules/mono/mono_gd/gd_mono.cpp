@@ -114,7 +114,6 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 	ERR_FAIL_COND_V_MSG(exitcode != 0, false, pipe);
 
 	Vector<String> sdks = pipe.strip_edges().replace("\r\n", "\n").split("\n", false);
-
 	godotsharp::SemVerParser sem_ver_parser;
 	godotsharp::SemVer latest_sdk_version;
 	String latest_sdk_path;
@@ -154,7 +153,7 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 
 String find_hostfxr() {
 #if defined(ANDROID_ENABLED)
-	// Tier 1: Subukang buksan mula sa APK native libraries directory
+	// Tier 1: Check internal APK libraries
 	void *test_handle = nullptr;
 	if (OS::get_singleton()->open_dynamic_library("libhostfxr.so", test_handle) == OK) {
 		OS::get_singleton()->close_dynamic_library(test_handle);
@@ -162,7 +161,7 @@ String find_hostfxr() {
 		return "libhostfxr.so";
 	}
 
-	// Tier 2, 3, 4: Subukan sa mga storage locations
+	// Tier 2, 3, 4: Storage locations
 	Vector<String> android_candidates;
 	android_candidates.push_back("/storage/emulated/0/GEngine/GodotSharp/libhostfxr.so");
 	android_candidates.push_back("/storage/emulated/0/GEngine/GodotSharp/host/fxr");
@@ -236,6 +235,17 @@ String find_hostfxr() {
 
 String find_monosgen() {
 #if defined(ANDROID_ENABLED)
+	void *test_handle = nullptr;
+	if (OS::get_singleton()->open_dynamic_library("libmonosgen-2.0.so", test_handle) == OK) {
+		OS::get_singleton()->close_dynamic_library(test_handle);
+		return "libmonosgen-2.0.so";
+	}
+	if (FileAccess::exists("/storage/emulated/0/GEngine/GodotSharp/libmonosgen-2.0.so")) {
+		return "/storage/emulated/0/GEngine/GodotSharp/libmonosgen-2.0.so";
+	}
+	if (FileAccess::exists("/storage/emulated/0/libs/libmonosgen-2.0.so")) {
+		return "/storage/emulated/0/libs/libmonosgen-2.0.so";
+	}
 	return "libmonosgen-2.0.so";
 #else
 #if defined(WINDOWS_ENABLED)
@@ -620,6 +630,15 @@ static bool _on_core_api_assembly_loaded() {
 }
 
 void GDMono::initialize() {
+	// PIGILAN ANG DOUBLE INITIALIZATION CRASH SA ANDROID:
+	if (runtime_initialized || initialized) {
+		print_verbose(".NET: Runtime already initialized. Skipping duplicate init on project switch.");
+#ifdef TOOLS_ENABLED
+		_try_load_project_assembly();
+#endif
+		return;
+	}
+
 	print_verbose(".NET: Initializing module on Android/Engine...");
 
 	_init_godot_api_hashes();
@@ -631,7 +650,7 @@ void GDMono::initialize() {
 		godot_plugins_initialize = initialize_hostfxr_and_godot_plugins(runtime_initialized);
 	}
 
-	// 2. Fallback: Subukan ang CoreCLR
+	// 2. Fallback: Subukan ang CoreCLR / Mono
 	if (godot_plugins_initialize == nullptr) {
 		if (load_coreclr(coreclr_dll_handle)) {
 			godot_plugins_initialize = initialize_coreclr_and_godot_plugins(runtime_initialized);
@@ -649,7 +668,7 @@ void GDMono::initialize() {
 
 	// Non-fatal safety barrier:
 	if (godot_plugins_initialize == nullptr) {
-		WARN_PRINT(".NET: C# runtime could not be loaded across all 5 tiers. Opening editor without C# runtime active.");
+		WARN_PRINT(".NET: C# runtime could not be loaded across all tiers. Opening editor safely.");
 		initialized = true;
 		return;
 	}
@@ -700,10 +719,20 @@ void GDMono::_try_load_project_assembly() {
 	if (Engine::get_singleton()->is_project_manager_hint()) {
 		return;
 	}
-	if (!_load_project_assembly()) {
-		if (OS::get_singleton()->is_stdout_verbose()) {
-			print_verbose(".NET: Project assembly not loaded (normal if unbuilt or GDScript project).");
+
+	// AUTO-CREATE .godot/mono/ TEMP DIRECTORY PARA HINDI MAG-CRASH
+	String temp_dir = GodotSharpDirs::get_res_temp_assemblies_dir();
+	temp_dir = ProjectSettings::get_singleton()->globalize_path(temp_dir);
+	if (!DirAccess::exists(temp_dir)) {
+		Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (da.is_valid()) {
+			da->make_dir_recursive(temp_dir);
+			print_verbose(".NET: Auto-created project mono directory: " + temp_dir);
 		}
+	}
+
+	if (!_load_project_assembly()) {
+		print_verbose(".NET: Project assembly not loaded yet (Normal para sa bagong project).");
 	}
 }
 #endif
@@ -736,7 +765,6 @@ uint64_t GDMono::get_api_editor_hash() {
 
 #ifdef TOOLS_ENABLED
 bool GDMono::_load_project_assembly() {
-	// NULL SAFETY CHECK: Kung walang LoadProjectAssemblyCallback, huwag tumawag
 	if (plugin_callbacks.LoadProjectAssemblyCallback == nullptr) {
 		print_verbose(".NET: LoadProjectAssemblyCallback is null, skipping.");
 		return false;
@@ -750,7 +778,6 @@ bool GDMono::_load_project_assembly() {
 	String assembly_path = GodotSharpDirs::get_res_temp_assemblies_dir().path_join(assembly_name + ".dll");
 	assembly_path = ProjectSettings::get_singleton()->globalize_path(assembly_path);
 
-	// Kung wala pang na-compile na DLL (bagong gawang project), exit safely
 	if (!FileAccess::exists(assembly_path)) {
 		print_verbose(".NET: Project assembly .dll not found at: " + assembly_path);
 		return false;
@@ -759,7 +786,6 @@ bool GDMono::_load_project_assembly() {
 	String loaded_assembly_path;
 	bool success = false;
 
-	// Ligtas na pag-invoke nang walang try/catch
 	if (plugin_callbacks.LoadProjectAssemblyCallback != nullptr) {
 		success = plugin_callbacks.LoadProjectAssemblyCallback(assembly_path.utf16().get_data(), &loaded_assembly_path);
 	}
