@@ -6,8 +6,9 @@ def is_unix_like(platform):
     return platform in ["macos", "linuxbsd", "android", "ios"]
 
 
+# BINAGO NATIN ITO: Idinagdag natin ang "android" para payagan ang editor build
 def module_supports_tools_on(platform):
-    return is_desktop(platform)
+    return is_desktop(platform) or platform == "android"
 
 
 def configure(env, env_mono):
@@ -19,4 +20,6 @@ def configure(env, env_mono):
     if env.editor_build:
         if not module_supports_tools_on(env["platform"]):
             raise RuntimeError("This module does not currently support building for this platform for editor builds.")
+        
+        # Pwede mong i-keep ito o i-disable muna ang hot reload kung magkaproblema sa Android
         env_mono.Append(CPPDEFINES=["GD_MONO_HOT_RELOAD"])
