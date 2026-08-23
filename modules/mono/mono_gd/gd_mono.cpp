@@ -555,7 +555,10 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
 
 	ERR_FAIL_COND_V_MSG(status != MONO_IMAGE_OK || image == nullptr, nullptr, ".NET: Failed to open assembly image.");
 	status = MONO_IMAGE_OK;
-	MonoAssembly *assembly = mono_assembly_load_from_full(image, assembly_name.utf8().get_data(), &status, ref_only);
+	MonoAssembly *assembly = mono_assembly_load_from_full(
+			image, assembly_name.utf8().get_data(),
+			&status,
+			ref_only);
 	ERR_FAIL_COND_V_MSG(status != MONO_IMAGE_OK || assembly == nullptr, nullptr, ".NET: Failed to load assembly from image.");
 
 	return assembly;
@@ -608,8 +611,13 @@ static bool _on_core_api_assembly_loaded() {
 #ifdef DEBUG_ENABLED
 	debug = true;
 #endif
-	GDMonoCache::managed_callbacks.GD_OnCoreApiAssemblyLoaded(debug);
-	return true;
+
+	// SAFE NULL-CHECK
+	if (GDMonoCache::managed_callbacks.GD_OnCoreApiAssemblyLoaded != nullptr) {
+		GDMonoCache::managed_callbacks.GD_OnCoreApiAssemblyLoaded(debug);
+		return true;
+	}
+	return false;
 }
 
 void GDMono::initialize() {
@@ -677,6 +685,11 @@ void GDMono::initialize() {
 
 #if defined(UNIX_ENABLED) && !defined(MACOS_ENABLED) && !defined(APPLE_EMBEDDED_ENABLED)
 	godot_dll_handle = dlopen(nullptr, RTLD_NOW);
+#if defined(ANDROID_ENABLED)
+	if (godot_dll_handle == nullptr) {
+		godot_dll_handle = dlopen("libgodot_android.so", RTLD_NOW);
+	}
+#endif
 #endif
 
 #ifdef TOOLS_ENABLED
@@ -713,7 +726,7 @@ void GDMono::_try_load_project_assembly() {
 	}
 	if (!_load_project_assembly()) {
 		if (OS::get_singleton()->is_stdout_verbose()) {
-			print_error(".NET: Failed to load project assembly");
+			print_verbose(".NET: Project assembly not loaded (normal if unbuilt or GDScript project).");
 		}
 	}
 }
@@ -747,19 +760,40 @@ uint64_t GDMono::get_api_editor_hash() {
 
 #ifdef TOOLS_ENABLED
 bool GDMono::_load_project_assembly() {
+	// NULL SAFETY CHECK: Kung walang LoadProjectAssemblyCallback, huwag tumawag para hindi mag-crash
+	if (plugin_callbacks.LoadProjectAssemblyCallback == nullptr) {
+		print_verbose(".NET: LoadProjectAssemblyCallback is null, skipping.");
+		return false;
+	}
+
 	String assembly_name = Path::get_csharp_project_name();
+	if (assembly_name.is_empty()) {
+		return false;
+	}
+
 	String assembly_path = GodotSharpDirs::get_res_temp_assemblies_dir().path_join(assembly_name + ".dll");
 	assembly_path = ProjectSettings::get_singleton()->globalize_path(assembly_path);
 
+	// Kung wala pang na-compile na DLL (bagong gawang project), exit safely
 	if (!FileAccess::exists(assembly_path)) {
+		print_verbose(".NET: Project assembly .dll not found at: " + assembly_path);
 		return false;
 	}
 
 	String loaded_assembly_path;
-	bool success = plugin_callbacks.LoadProjectAssemblyCallback(assembly_path.utf16().get_data(), &loaded_assembly_path);
+	bool success = false;
+
+	try {
+		success = plugin_callbacks.LoadProjectAssemblyCallback(assembly_path.utf16().get_data(), &loaded_assembly_path);
+	} catch (...) {
+		print_error(".NET: Exception caught while loading project assembly.");
+		return false;
+	}
+
 	if (success) {
 		project_assembly_path = loaded_assembly_path.simplify_path();
 		project_assembly_modified_time = FileAccess::get_modified_time(loaded_assembly_path);
+		print_verbose(".NET: Successfully loaded project assembly: " + loaded_assembly_path);
 	}
 	return success;
 }
@@ -783,9 +817,11 @@ Error GDMono::reload_project_assemblies() {
 	ERR_FAIL_COND_V(!runtime_initialized, ERR_BUG);
 	finalizing_scripts_domain = true;
 
-	if (!get_plugin_callbacks().UnloadProjectPluginCallback()) {
-		reload_failure();
-		return FAILED;
+	if (get_plugin_callbacks().UnloadProjectPluginCallback != nullptr) {
+		if (!get_plugin_callbacks().UnloadProjectPluginCallback()) {
+			reload_failure();
+			return FAILED;
+		}
 	}
 
 	finalizing_scripts_domain = false;
