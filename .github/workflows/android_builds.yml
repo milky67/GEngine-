@@ -21,52 +21,49 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      # 1. Checkout Source
       - name: Checkout Source Code
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      # 2. Setup .NET 8 SDK
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      # 3. Setup Java 17
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      # 4. Setup Python, SCons, & Dependencies
       - name: Setup Python and SCons
         uses: ./.github/actions/godot-deps
 
-      # 5. Download Google Swappy SDK (Para sa Android Frame Pacing)
       - name: Download Swappy SDK
         shell: sh
         run: |
           python ./misc/scripts/install_swappy_android.py
 
-      # 6. Build Host Linux Editor & Generate Mono Glue (Headless Mode)
       - name: Build Host Linux Editor (for Mono Glue)
         run: |
           scons platform=linuxbsd target=editor module_mono_enabled=yes -j$(nproc)
           ./bin/godot.linuxbsd.editor.x86_64.mono --headless --generate-mono-glue modules/mono/glue
 
-      # 7. Build GodotSharp C# Assemblies
       - name: Build GodotSharp Assemblies
         run: |
           python ./modules/mono/build_scripts/build_assemblies.py --godot-output-dir=./bin --precision=single
 
-      # 8. Compile Android Editor with C# & Swappy
       - name: Compile Android Editor with C# (arm64)
         run: |
           scons platform=android target=editor arch=arm64 ${{ env.SCONS_FLAGS }} -j$(nproc)
 
-      # 9. Build and Package APK
+      - name: Bundle GodotSharp inside Android Assets
+        run: |
+          mkdir -p platform/android/java/editor/src/main/assets/GodotSharp
+          cp -rv bin/GodotSharp/* platform/android/java/editor/src/main/assets/GodotSharp/
+          echo "GodotSharp successfully injected into Android assets!"
+
       - name: Generate Android Editor APK
         run: |
           cd platform/android/java
@@ -74,9 +71,8 @@ jobs:
           cd ../../..
           ls -lh bin/android_editor_builds/
 
-      # 10. Upload Final APK
       - name: Upload Android Editor APK
         uses: actions/upload-artifact@v4
         with:
-          name: Godot-Android-Editor-CSharp-arm64
+          name: GEngine-Android-Editor-CSharp-arm64
           path: bin/android_editor_builds/*.apk
