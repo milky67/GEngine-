@@ -5,28 +5,6 @@
 /*                             GODOT ENGINE                               */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
-/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
-/*                                                                        */
-/* Permission is hereby granted, free of charge, to any person obtaining  */
-/* a copy of this software and associated documentation files (the        */
-/* "Software"), to deal in the Software without restriction, including    */
-/* without limitation the rights to use, copy, modify, merge, publish,    */
-/* distribute, sublicense, and/or sell copies of the Software, and to     */
-/* permit persons to whom the Software is furnished to do so, subject to  */
-/* the following conditions:                                              */
-/*                                                                        */
-/* The above copyright notice and this permission notice shall be         */
-/* included in all copies or substantial portions of the Software.        */
-/*                                                                        */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
-/**************************************************************************/
 
 #include "gd_mono.h"
 
@@ -57,10 +35,8 @@
 #include <dlfcn.h>
 #endif
 
-#ifndef TOOLS_ENABLED
-#ifdef ANDROID_ENABLED
+#if defined(ANDROID_ENABLED)
 #include "../thirdparty/mono_delegates.h"
-#endif
 #endif
 
 GDMono *GDMono::singleton = nullptr;
@@ -111,6 +87,22 @@ const char_t *get_data(const HostFxrCharString &p_char_str) {
 
 #ifdef TOOLS_ENABLED
 bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
+#if defined(ANDROID_ENABLED)
+	Vector<String> possible_roots;
+	possible_roots.push_back("/storage/emulated/0/GEngine/dotnet");
+	possible_roots.push_back("/storage/emulated/0/GEngine/GodotSharp/dotnet");
+	possible_roots.push_back("/storage/emulated/0/GodotSharp/dotnet");
+	possible_roots.push_back("/sdcard/GEngine/dotnet");
+
+	for (const String &path : possible_roots) {
+		if (DirAccess::exists(path)) {
+			r_dotnet_root = path;
+			print_verbose(".NET: Found Android dotnet root at: " + r_dotnet_root);
+			return true;
+		}
+	}
+	return false;
+#else
 	String pipe;
 	List<String> args;
 	args.push_back("--list-sdks");
@@ -124,13 +116,10 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 	Vector<String> sdks = pipe.strip_edges().replace("\r\n", "\n").split("\n", false);
 
 	godotsharp::SemVerParser sem_ver_parser;
-
 	godotsharp::SemVer latest_sdk_version;
 	String latest_sdk_path;
 
 	for (const String &sdk : sdks) {
-		// The format of the SDK lines is:
-		// 8.0.401 [/usr/share/dotnet/sdk]
 		String version_string = sdk.get_slice(" ", 0);
 		String path = sdk.get_slice(" ", 1);
 		path = path.substr(1, path.length() - 2);
@@ -154,25 +143,59 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 
 	if (!latest_sdk_path.is_empty()) {
 		print_verbose("Found .NET SDK at " + latest_sdk_path);
-		// The `dotnet_root` is the parent directory.
 		r_dotnet_root = latest_sdk_path.path_join("..").simplify_path();
 		return true;
 	}
 
 	return false;
+#endif
 }
 #endif
 
 String find_hostfxr() {
 #ifdef TOOLS_ENABLED
+#if defined(ANDROID_ENABLED)
+	Vector<String> android_candidates;
+	// 1. Phone Storage Candidates (GEngine folder)
+	android_candidates.push_back("/storage/emulated/0/GEngine/GodotSharp/libhostfxr.so");
+	android_candidates.push_back("/storage/emulated/0/GEngine/dotnet/host/fxr");
+	android_candidates.push_back("/storage/emulated/0/GEngine/GodotSharp/host/fxr");
+	android_candidates.push_back("/storage/emulated/0/GodotSharp/libhostfxr.so");
+	android_candidates.push_back("/sdcard/GEngine/GodotSharp/libhostfxr.so");
+
+	for (const String &path : android_candidates) {
+		if (FileAccess::exists(path)) {
+			print_verbose(".NET: Found hostfxr at: " + path);
+			return path;
+		}
+		if (DirAccess::exists(path)) {
+			Ref<DirAccess> da = DirAccess::open(path);
+			if (da.is_valid()) {
+				da->list_dir_begin();
+				String dir_name = da->get_next();
+				while (!dir_name.is_empty()) {
+					if (da->current_is_dir() && !dir_name.begins_with(".")) {
+						String full_path = path.path_join(dir_name).path_join("libhostfxr.so");
+						if (FileAccess::exists(full_path)) {
+							print_verbose(".NET: Found hostfxr at: " + full_path);
+							return full_path;
+						}
+					}
+					dir_name = da->get_next();
+				}
+			}
+		}
+	}
+
+	// 2. APK native library fallback
+	return "libhostfxr.so";
+#else
 	String dotnet_root;
 	String fxr_path;
 	if (godotsharp::hostfxr_resolver::try_get_path(dotnet_root, fxr_path)) {
 		return fxr_path;
 	}
 
-	// hostfxr_resolver doesn't look for dotnet in `PATH`. If it fails, we try to use the dotnet
-	// executable in `PATH` to find the `dotnet_root` and get the `hostfxr_path` from there.
 	if (try_get_dotnet_root_from_command_line(dotnet_root)) {
 		if (godotsharp::hostfxr_resolver::try_get_path_from_dotnet_root(dotnet_root, fxr_path)) {
 			return fxr_path;
@@ -184,17 +207,17 @@ String find_hostfxr() {
 			"libraries are not present in the expected locations.");
 
 	return String();
+#endif
 #else
 
 #if defined(WINDOWS_ENABLED)
-	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-								.path_join("hostfxr.dll");
+	String probe_path = GodotSharpDirs::get_api_assemblies_dir().path_join("hostfxr.dll");
 #elif defined(MACOS_ENABLED)
-	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-								.path_join("libhostfxr.dylib");
+	String probe_path = GodotSharpDirs::get_api_assemblies_dir().path_join("libhostfxr.dylib");
+#elif defined(ANDROID_ENABLED)
+	String probe_path = "libhostfxr.so";
 #elif defined(UNIX_ENABLED)
-	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-								.path_join("libhostfxr.so");
+	String probe_path = GodotSharpDirs::get_api_assemblies_dir().path_join("libhostfxr.so");
 #else
 #error "Platform not supported (yet?)"
 #endif
@@ -204,26 +227,20 @@ String find_hostfxr() {
 	}
 
 	return String();
-
 #endif
 }
 
 #ifndef TOOLS_ENABLED
 String find_monosgen() {
 #if defined(ANDROID_ENABLED)
-	// Android includes all native libraries in the libs directory of the APK
-	// so we assume it exists and use only the name to dlopen it.
 	return "libmonosgen-2.0.so";
 #else
 #if defined(WINDOWS_ENABLED)
-	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-								.path_join("monosgen-2.0.dll");
+	String probe_path = GodotSharpDirs::get_api_assemblies_dir().path_join("monosgen-2.0.dll");
 #elif defined(MACOS_ENABLED)
-	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-								.path_join("libmonosgen-2.0.dylib");
+	String probe_path = GodotSharpDirs::get_api_assemblies_dir().path_join("libmonosgen-2.0.dylib");
 #elif defined(UNIX_ENABLED)
-	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-								.path_join("libmonosgen-2.0.so");
+	String probe_path = GodotSharpDirs::get_api_assemblies_dir().path_join("libmonosgen-2.0.so");
 #else
 #error "Platform not supported (yet?)"
 #endif
@@ -238,14 +255,13 @@ String find_monosgen() {
 
 String find_coreclr() {
 #if defined(WINDOWS_ENABLED)
-	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-								.path_join("coreclr.dll");
+	String probe_path = GodotSharpDirs::get_api_assemblies_dir().path_join("coreclr.dll");
 #elif defined(MACOS_ENABLED)
-	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-								.path_join("libcoreclr.dylib");
+	String probe_path = GodotSharpDirs::get_api_assemblies_dir().path_join("libcoreclr.dylib");
+#elif defined(ANDROID_ENABLED)
+	String probe_path = "libcoreclr.so";
 #elif defined(UNIX_ENABLED)
-	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-								.path_join("libcoreclr.so");
+	String probe_path = GodotSharpDirs::get_api_assemblies_dir().path_join("libcoreclr.so");
 #else
 #error "Platform not supported (yet?)"
 #endif
@@ -274,7 +290,6 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
 	}
 
 	void *lib = r_hostfxr_dll_handle;
-
 	void *symbol = nullptr;
 
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "hostfxr_initialize_for_dotnet_command_line", symbol);
@@ -304,7 +319,6 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
 
 	bool is_monovm = false;
 	if (coreclr_path.is_empty()) {
-		// Fallback to MonoVM (should have the same API as CoreCLR).
 		coreclr_path = find_monosgen();
 		is_monovm = true;
 	}
@@ -323,7 +337,6 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
 	}
 
 	void *lib = r_coreclr_dll_handle;
-
 	void *symbol = nullptr;
 
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "coreclr_initialize", symbol);
@@ -356,8 +369,7 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
 	mono_assembly_load_from_full = (mono_assembly_load_from_full_fn)symbol;
 #endif
 
-	return (coreclr_initialize &&
-			coreclr_create_delegate);
+	return (coreclr_initialize && coreclr_create_delegate);
 }
 #endif
 
@@ -383,12 +395,10 @@ load_assembly_and_get_function_pointer_fn initialize_hostfxr_for_config(const ch
 	return (load_assembly_and_get_function_pointer_fn)load_assembly_and_get_function_pointer;
 }
 #else
-load_assembly_and_get_function_pointer_fn initialize_hostfxr_self_contained(
-		const char_t *p_main_assembly_path) {
+load_assembly_and_get_function_pointer_fn initialize_hostfxr_self_contained(const char_t *p_main_assembly_path) {
 	hostfxr_handle cxt = nullptr;
 
 	List<String> cmdline_args = OS::get_singleton()->get_cmdline_args();
-
 	List<HostFxrCharString> argv_store;
 	Vector<const char_t *> argv;
 	argv.resize(cmdline_args.size() + 1);
@@ -432,23 +442,31 @@ using godot_plugins_initialize_fn = bool (*)(void *, GDMonoCache::ManagedCallbac
 godot_plugins_initialize_fn initialize_hostfxr_and_godot_plugins(bool &r_runtime_initialized) {
 	godot_plugins_initialize_fn godot_plugins_initialize = nullptr;
 
-	HostFxrCharString godot_plugins_path = str_to_hostfxr(
-			GodotSharpDirs::get_api_assemblies_dir().path_join("GodotPlugins.dll"));
+	String base_assemblies_dir = GodotSharpDirs::get_api_assemblies_dir();
 
-	HostFxrCharString config_path = str_to_hostfxr(
-			GodotSharpDirs::get_api_assemblies_dir().path_join("GodotPlugins.runtimeconfig.json"));
+#if defined(ANDROID_ENABLED)
+	// Check storage overrides first
+	if (FileAccess::exists("/storage/emulated/0/GEngine/GodotSharp/GodotPlugins.dll")) {
+		base_assemblies_dir = "/storage/emulated/0/GEngine/GodotSharp";
+	} else if (FileAccess::exists("/storage/emulated/0/GEngine/GodotSharp/Tools/GodotPlugins.dll")) {
+		base_assemblies_dir = "/storage/emulated/0/GEngine/GodotSharp/Tools";
+	} else if (FileAccess::exists("/storage/emulated/0/GodotSharp/GodotPlugins.dll")) {
+		base_assemblies_dir = "/storage/emulated/0/GodotSharp";
+	}
+#endif
+
+	HostFxrCharString godot_plugins_path = str_to_hostfxr(base_assemblies_dir.path_join("GodotPlugins.dll"));
+	HostFxrCharString config_path = str_to_hostfxr(base_assemblies_dir.path_join("GodotPlugins.runtimeconfig.json"));
 
 	load_assembly_and_get_function_pointer_fn load_assembly_and_get_function_pointer =
 			initialize_hostfxr_for_config(get_data(config_path));
 
 	if (load_assembly_and_get_function_pointer == nullptr) {
-		// Show a message box to the user to make the problem explicit (and explain a potential crash).
-		OS::get_singleton()->alert(TTR("Unable to load .NET runtime, no compatible version was found.\nAttempting to create/edit a project will lead to a crash.\n\nPlease install the .NET SDK 8.0 or later from https://get.dot.net and restart Godot."), TTR("Failed to load .NET runtime"));
+		OS::get_singleton()->alert(TTR("Unable to load .NET runtime.\nPlease place GodotSharp/.NET files in /storage/emulated/0/GEngine/GodotSharp/"), TTR("Failed to load .NET runtime"));
 		ERR_FAIL_V_MSG(nullptr, ".NET: Failed to load compatible .NET runtime");
 	}
 
 	r_runtime_initialized = true;
-
 	print_verbose(".NET: hostfxr initialized");
 
 	int rc = load_assembly_and_get_function_pointer(get_data(godot_plugins_path),
@@ -511,7 +529,6 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
 	}
 
 	void *lib = r_aot_dll_handle;
-
 	void *symbol = nullptr;
 
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "godotsharp_game_main_init", symbol);
@@ -544,7 +561,6 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
 	print_verbose(".NET: Loading assembly '" + assembly_name + "' from '" + path + "'.");
 
 	if (!FileAccess::exists(path)) {
-		// We could not find the assembly, return null so another hook may find it.
 		return nullptr;
 	}
 
@@ -555,7 +571,7 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
 
 	MonoImage *image = mono_image_open_from_data_with_name(
 			reinterpret_cast<char *>(data.ptrw()), data.size(),
-			/*need_copy*/ true,
+			true,
 			&status,
 			ref_only,
 			assembly_name.utf8().get_data());
@@ -577,12 +593,9 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
 
 godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime_initialized) {
 	godot_plugins_initialize_fn godot_plugins_initialize = nullptr;
-
 	String assembly_name = Path::get_csharp_project_name();
 
 #ifdef ANDROID_ENABLED
-	// Android requires installing a preload hook to load assemblies from inside the APK,
-	// other platforms can find the assemblies with the default lookup.
 	if (mono_install_assembly_preload_hook != nullptr) {
 		mono_install_assembly_preload_hook(&load_assembly_from_pck, nullptr);
 	}
@@ -594,7 +607,6 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
 	ERR_FAIL_COND_V_MSG(rc != 0, nullptr, ".NET: Failed to initialize CoreCLR.");
 
 	r_runtime_initialized = true;
-
 	print_verbose(".NET: CoreCLR initialized");
 
 	coreclr_create_delegate(coreclr_handle, domain_id,
@@ -612,7 +624,6 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
 
 bool GDMono::should_initialize() {
 #ifdef TOOLS_ENABLED
-	// The editor always needs to initialize the .NET module for now.
 	return true;
 #else
 	return OS::get_singleton()->has_feature("dotnet");
@@ -629,10 +640,9 @@ static bool _on_core_api_assembly_loaded() {
 	debug = true;
 #else
 	debug = false;
-#endif // DEBUG_ENABLED
+#endif
 
 	GDMonoCache::managed_callbacks.GD_OnCoreApiAssemblyLoaded(debug);
-
 	return true;
 }
 
@@ -644,10 +654,22 @@ void GDMono::initialize() {
 	godot_plugins_initialize_fn godot_plugins_initialize = nullptr;
 
 #if !defined(APPLE_EMBEDDED_ENABLED)
-	// Check that the .NET assemblies directory exists before trying to use it.
-	if (!DirAccess::exists(GodotSharpDirs::get_api_assemblies_dir())) {
-		OS::get_singleton()->alert(vformat(RTR("Unable to find the .NET assemblies directory.\nMake sure the '%s' directory exists and contains the .NET assemblies."), GodotSharpDirs::get_api_assemblies_dir()), RTR(".NET assemblies not found"));
-		ERR_FAIL_MSG(".NET: Assemblies not found");
+	String assemblies_dir = GodotSharpDirs::get_api_assemblies_dir();
+
+#if defined(ANDROID_ENABLED)
+	if (!DirAccess::exists(assemblies_dir)) {
+		if (DirAccess::exists("/storage/emulated/0/GEngine/GodotSharp/Api")) {
+			assemblies_dir = "/storage/emulated/0/GEngine/GodotSharp/Api";
+		} else if (DirAccess::exists("/storage/emulated/0/GEngine/GodotSharp")) {
+			assemblies_dir = "/storage/emulated/0/GEngine/GodotSharp";
+		} else if (DirAccess::exists("/storage/emulated/0/GodotSharp/Api")) {
+			assemblies_dir = "/storage/emulated/0/GodotSharp/Api";
+		}
+	}
+#endif
+
+	if (!DirAccess::exists(assemblies_dir)) {
+		WARN_PRINT(".NET: Assemblies directory not found at " + assemblies_dir + ". Fallback will be used if files exist.");
 	}
 #endif
 
@@ -670,9 +692,7 @@ void GDMono::initialize() {
 			ERR_FAIL_MSG(".NET: Failed to load hostfxr");
 		}
 #else
-
-		// Show a message box to the user to make the problem explicit (and explain a potential crash).
-		OS::get_singleton()->alert(TTR("Unable to load .NET runtime, specifically hostfxr.\nAttempting to create/edit a project will lead to a crash.\n\nPlease install the .NET SDK 8.0 or later from https://get.dot.net and restart Godot."), TTR("Failed to load .NET runtime"));
+		OS::get_singleton()->alert(TTR("Unable to load .NET runtime (hostfxr).\nPlease place libhostfxr.so in /storage/emulated/0/GEngine/GodotSharp/"), TTR("Failed to load .NET runtime"));
 		ERR_FAIL_MSG(".NET: Failed to load hostfxr");
 #endif
 	}
@@ -685,7 +705,6 @@ void GDMono::initialize() {
 	void *godot_dll_handle = nullptr;
 
 #if defined(UNIX_ENABLED) && !defined(MACOS_ENABLED) && !defined(APPLE_EMBEDDED_ENABLED)
-	// Managed code can access it on its own on other platforms
 	godot_dll_handle = dlopen(nullptr, RTLD_NOW);
 #endif
 
@@ -723,9 +742,6 @@ void GDMono::_try_load_project_assembly() {
 		return;
 	}
 
-	// Load the project's main assembly. This doesn't necessarily need to succeed.
-	// The game may not be using .NET at all, or if the project does use .NET and
-	// we're running in the editor, it may just happen to be it wasn't built yet.
 	if (!_load_project_assembly()) {
 		if (OS::get_singleton()->is_stdout_verbose()) {
 			print_error(".NET: Failed to load project assembly");
@@ -740,8 +756,8 @@ void GDMono::_init_godot_api_hashes() {
 
 #ifdef TOOLS_ENABLED
 	get_api_editor_hash();
-#endif // TOOLS_ENABLED
-#endif // DEBUG_ENABLED
+#endif
+#endif
 }
 
 #ifdef DEBUG_ENABLED
@@ -758,15 +774,14 @@ uint64_t GDMono::get_api_editor_hash() {
 	}
 	return api_editor_hash;
 }
-#endif // TOOLS_ENABLED
-#endif // DEBUG_ENABLED
+#endif
+#endif
 
 #ifdef TOOLS_ENABLED
 bool GDMono::_load_project_assembly() {
 	String assembly_name = Path::get_csharp_project_name();
 
-	String assembly_path = GodotSharpDirs::get_res_temp_assemblies_dir()
-								   .path_join(assembly_name + ".dll");
+	String assembly_path = GodotSharpDirs::get_res_temp_assemblies_dir().path_join(assembly_name + ".dll");
 	assembly_path = ProjectSettings::get_singleton()->globalize_path(assembly_path);
 
 	if (!FileAccess::exists(assembly_path)) {
@@ -788,8 +803,6 @@ bool GDMono::_load_project_assembly() {
 #ifdef GD_MONO_HOT_RELOAD
 void GDMono::reload_failure() {
 	if (++project_load_failure_count >= (int)GLOBAL_GET("dotnet/project/assembly_reload_attempts")) {
-		// After reloading a project has failed n times in a row, update the path and modification time
-		// to stop any further attempts at loading this assembly, which probably is never going to work anyways.
 		project_load_failure_count = 0;
 
 		ERR_PRINT_ED(".NET: Giving up on assembly reloading. Please restart the editor if unloading was failing.");
@@ -815,8 +828,6 @@ Error GDMono::reload_project_assemblies() {
 
 	finalizing_scripts_domain = false;
 
-	// Load the project's main assembly. Here, during hot-reloading, we do
-	// consider failing to load the project's main assembly to be an error.
 	if (!_load_project_assembly()) {
 		ERR_PRINT_ED(".NET: Failed to load project assembly.");
 		reload_failure();
@@ -848,7 +859,6 @@ GDMono::~GDMono() {
 
 	finalizing_scripts_domain = false;
 	runtime_initialized = false;
-
 	singleton = nullptr;
 }
 
@@ -859,8 +869,6 @@ GodotSharp *GodotSharp::singleton = nullptr;
 void GodotSharp::reload_assemblies() {
 #ifdef GD_MONO_HOT_RELOAD
 	CRASH_COND(CSharpLanguage::get_singleton() == nullptr);
-	// This method may be called more than once with `call_deferred`, so we need to check
-	// again if reloading is needed to avoid reloading multiple times unnecessarily.
 	if (CSharpLanguage::get_singleton()->is_assembly_reloading_needed()) {
 		CSharpLanguage::get_singleton()->reload_assemblies();
 	}
