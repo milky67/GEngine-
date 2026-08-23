@@ -162,7 +162,7 @@ def configure(env: "SConsEnvironment"):
 
     # LTO
 
-    if env["lto"] == "auto":  # LTO benefits for Android (size, performance) haven't been clearly established yet.
+    if env["lto"] == "auto":
         env["lto"] = "none"
 
     if env["lto"] != "none":
@@ -247,10 +247,14 @@ def configure(env: "SConsEnvironment"):
     env.Append(CCFLAGS=["-ffp-contract=off"])
 
     # Link flags
-
     env.Append(LINKFLAGS=["-Wl,--gc-sections", "-Wl,--no-undefined", "-Wl,-z,now"])
     env.Append(LINKFLAGS=["-Wl,--build-id"])
     env.Append(LINKFLAGS=["-Wl,-soname,libgodot_android.so"])
+
+    # CRITICAL PARA SA MONO / .NET C# INTEROP SA ANDROID:
+    # I-export ang lahat ng dynamic symbols para ma-hook ng CoreCLR/Mono
+    if env.get("module_mono_enabled", False):
+        env.Append(LINKFLAGS=["-Wl,--export-dynamic"])
 
     env.Prepend(CPPPATH=["#platform/android"])
     env.Append(CPPDEFINES=["ANDROID_ENABLED", "UNIX_ENABLED"])
