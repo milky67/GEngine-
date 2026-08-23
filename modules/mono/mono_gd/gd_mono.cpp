@@ -280,6 +280,14 @@ String find_coreclr() {
 }
 
 bool load_hostfxr(void *&r_hostfxr_dll_handle) {
+#if defined(ANDROID_ENABLED)
+	// I-preload ang system dl at c++ runtime para maiwasan ang libdl.so.2 missing error
+	void *dl_handle = nullptr;
+	OS::get_singleton()->open_dynamic_library("libdl.so", dl_handle);
+	void *cxx_handle = nullptr;
+	OS::get_singleton()->open_dynamic_library("libc++_shared.so", cxx_handle);
+#endif
+
 	String hostfxr_path = find_hostfxr();
 	if (hostfxr_path.is_empty()) {
 		return false;
@@ -291,7 +299,6 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
 	if (err != OK) {
 		return false;
 	}
-
 	void *lib = r_hostfxr_dll_handle;
 	void *symbol = nullptr;
 
@@ -317,6 +324,15 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
 }
 
 bool load_coreclr(void *&r_coreclr_dll_handle) {
+#if defined(ANDROID_ENABLED)
+	// 1. I-preload ang basic Android system libraries para masagot ang libdl.so.2 at libgcc_s dependencies
+	void *sys_dl_handle = nullptr;
+	OS::get_singleton()->open_dynamic_library("libdl.so", sys_dl_handle);
+
+	void *sys_cpp_handle = nullptr;
+	OS::get_singleton()->open_dynamic_library("libc++_shared.so", sys_cpp_handle);
+#endif
+
 	String coreclr_path = find_coreclr();
 	bool is_monovm = false;
 
@@ -333,7 +349,20 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
 	print_verbose("Found " + coreclr_name + ": " + coreclr_path);
 
 	Error err = OS::get_singleton()->open_dynamic_library(coreclr_path, r_coreclr_dll_handle);
-	if (err != OK) {
+	
+#if defined(ANDROID_ENABLED) && defined(UNIX_ENABLED)
+	// Fallback para sa Android native linker gamit ang RTLD_GLOBAL
+	if (err != OK || r_coreclr_dll_handle == nullptr) {
+		print_verbose(".NET/Android: Trying direct dlopen fallback for " + coreclr_path);
+		r_coreclr_dll_handle = dlopen(coreclr_path.utf8().get_data(), RTLD_NOW | RTLD_GLOBAL);
+		if (r_coreclr_dll_handle != nullptr) {
+			err = OK;
+		}
+	}
+#endif
+
+	if (err != OK || r_coreclr_dll_handle == nullptr) {
+		print_verbose(".NET: Failed to open dynamic library for " + coreclr_name);
 		return false;
 	}
 
@@ -373,7 +402,7 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
 	}
 #endif
 
-	return (coreclr_initialize && coreclr_create_delegate);
+	return (coreclr_initialize != nullptr && coreclr_create_delegate != nullptr);
 }
 
 #ifdef TOOLS_ENABLED
@@ -381,13 +410,16 @@ load_assembly_and_get_function_pointer_fn initialize_hostfxr_for_config(const ch
 	hostfxr_handle cxt = nullptr;
 	int rc = hostfxr_initialize_for_runtime_config(p_config_path, nullptr, &cxt);
 	if (rc != 0 || cxt == nullptr) {
-		hostfxr_close(cxt);
+		if (cxt != nullptr) {
+			hostfxr_close(cxt);
+		}
 		ERR_FAIL_V_MSG(nullptr, "hostfxr_initialize_for_runtime_config failed with code: " + itos(rc));
 	}
 
 	void *load_assembly_and_get_function_pointer = nullptr;
 	rc = hostfxr_get_runtime_delegate(cxt, hdt_load_assembly_and_get_function_pointer, &load_assembly_and_get_function_pointer);
 	if (rc != 0 || load_assembly_and_get_function_pointer == nullptr) {
+		hostfxr_close(cxt);
 		ERR_FAIL_V_MSG(nullptr, "hostfxr_get_runtime_delegate failed with code: " + itos(rc));
 	}
 
@@ -414,13 +446,16 @@ load_assembly_and_get_function_pointer_fn initialize_hostfxr_self_contained(cons
 
 	int rc = hostfxr_initialize_for_dotnet_command_line(argv.size(), argv.ptrw(), nullptr, &cxt);
 	if (rc != 0 || cxt == nullptr) {
-		hostfxr_close(cxt);
+		if (cxt != nullptr) {
+			hostfxr_close(cxt);
+		}
 		ERR_FAIL_V_MSG(nullptr, "hostfxr_initialize_for_dotnet_command_line failed with code: " + itos(rc));
 	}
 
 	void *load_assembly_and_get_function_pointer = nullptr;
 	rc = hostfxr_get_runtime_delegate(cxt, hdt_load_assembly_and_get_function_pointer, &load_assembly_and_get_function_pointer);
 	if (rc != 0 || load_assembly_and_get_function_pointer == nullptr) {
+		hostfxr_close(cxt);
 		ERR_FAIL_V_MSG(nullptr, "hostfxr_get_runtime_delegate failed with code: " + itos(rc));
 	}
 
