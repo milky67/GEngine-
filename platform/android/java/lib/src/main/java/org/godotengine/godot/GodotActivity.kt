@@ -38,6 +38,7 @@ import android.content.pm.PackageManager
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import android.util.Log
 import android.util.Rational
 import android.view.View
@@ -166,25 +167,24 @@ abstract class GodotActivity : FragmentActivity(), GodotHost, PictureInPicturePr
 
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 			val gameView = findViewById<View>(R.id.godot_fragment_container)
-			gameView?.addOnLayoutChangeListener { v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+			gameView?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
 				gameView.getGlobalVisibleRect(gameViewSourceRectHint)
 			}
 		}
 	}
 
 	override fun onNewGodotInstanceRequested(args: Array<String>): Int {
-		Log.d(TAG, "Restarting with parameters ${args.contentToString()}")
+		Log.d(TAG, ".NET/Android: Restarting with parameters ${args.contentToString()}")
 		val intent = Intent()
 			.setComponent(ComponentName(this, javaClass.name))
-			.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+			.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 			.putExtra(EXTRA_COMMAND_LINE_PARAMS, args)
 		triggerRebirth(null, intent)
-		// fake 'process' id returned by create_instance() etc
 		return DEFAULT_WINDOW_ID
 	}
 
 	protected fun triggerRebirth(bundle: Bundle?, intent: Intent) {
-		// Launch a new activity
+		Log.d(TAG, ".NET/Android: Triggering clean ProcessPhoenix rebirth...")
 		Godot.getInstance(applicationContext).destroyAndKillProcess {
 			ProcessPhoenix.triggerRebirth(this, bundle, intent)
 		}
@@ -202,7 +202,6 @@ abstract class GodotActivity : FragmentActivity(), GodotHost, PictureInPicturePr
 		super.onStop()
 
 		if (isInPictureInPictureMode && !isFinishing) {
-			// We get in this state when PiP is closed, so we terminate the activity.
 			finish()
 		}
 	}
@@ -214,7 +213,7 @@ abstract class GodotActivity : FragmentActivity(), GodotHost, PictureInPicturePr
 	private fun terminateGodotInstance(instance: Godot) {
 		godotFragment?.let {
 			if (instance === it.godot) {
-				Log.v(TAG, "Force quitting Godot instance")
+				Log.v(TAG, ".NET/Android: Force quitting Godot instance and cleaning process")
 				ProcessPhoenix.forceQuit(this)
 			}
 		}
@@ -224,13 +223,18 @@ abstract class GodotActivity : FragmentActivity(), GodotHost, PictureInPicturePr
 		runOnUiThread {
 			godotFragment?.let {
 				if (instance === it.godot) {
-					// It's very hard to properly de-initialize Godot on Android to restart the game
-					// from scratch. Therefore, we need to kill the whole app process and relaunch it.
-					//
-					// Restarting only the activity, wouldn't be enough unless it did proper cleanup (including
-					// releasing and reloading native libs or resetting their state somehow and clearing static data).
-					Log.v(TAG, "Restarting Godot instance...")
-					ProcessPhoenix.triggerRebirth(this)
+					Log.v(TAG, ".NET/Android: Clean restart requested from engine.")
+					val restartIntent = Intent(intent)
+						.setComponent(ComponentName(this, javaClass.name))
+						.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+					
+					// Ensure existing command line args are preserved or updated
+					val currentArgs = retrieveCommandLineParamsFromLaunchIntent()
+					if (currentArgs.isNotEmpty()) {
+						restartIntent.putExtra(EXTRA_COMMAND_LINE_PARAMS, currentArgs)
+					}
+
+					triggerRebirth(null, restartIntent)
 				}
 			}
 		}
@@ -241,7 +245,6 @@ abstract class GodotActivity : FragmentActivity(), GodotHost, PictureInPicturePr
 
 		if (isPiPEnabled()) {
 			try {
-				// Update the aspect ratio for picture-in-picture mode.
 				val viewportWidth = Integer.parseInt(GodotLib.getGlobal("display/window/size/viewport_width"))
 				val viewportHeight = Integer.parseInt(GodotLib.getGlobal("display/window/size/viewport_height"))
 				pipAspectRatio.set(Rational(viewportWidth, viewportHeight))
@@ -281,7 +284,6 @@ abstract class GodotActivity : FragmentActivity(), GodotHost, PictureInPicturePr
 		super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 		godotFragment?.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
-		// Logging the result of permission requests
 		if (requestCode == PermissionsUtil.REQUEST_ALL_PERMISSION_REQ_CODE || requestCode == PermissionsUtil.REQUEST_SINGLE_PERMISSION_REQ_CODE) {
 			Log.d(TAG, "Received permissions request result..")
 			for (i in permissions.indices) {
@@ -299,9 +301,6 @@ abstract class GodotActivity : FragmentActivity(), GodotHost, PictureInPicturePr
 		return godotFragment?.godot
 	}
 
-	/**
-	 * Used to initialize the Godot fragment instance in [onCreate].
-	 */
 	protected open fun initGodotInstance(): GodotFragment {
 		return GodotFragment()
 	}
@@ -314,15 +313,8 @@ abstract class GodotActivity : FragmentActivity(), GodotHost, PictureInPicturePr
 		godot?.onPictureInPictureModeChanged(isInPictureInPictureMode)
 	}
 
-	/**
-	 * Returns true if picture-in-picture (PiP) mode is supported.
-	 */
 	override fun isPiPModeSupported() = isPiPEnabled() && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
-	/**
-	 * Returns true if the current activity has enabled picture-in-picture in its manifest declaration using
-	 * 'android:supportsPictureInPicture="true"'
-	 */
 	protected open fun isPiPEnabled() = false
 
 	fun updatePiPParams(enableAutoEnter: Boolean = autoEnterPiP.get(), aspectRatio: Rational? = pipAspectRatio.get()) {
