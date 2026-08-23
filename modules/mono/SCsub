@@ -8,12 +8,16 @@ Import("env_modules")
 
 env_mono = env_modules.Clone()
 
-# Configure Mono
-
+# Configure Mono / .NET
 mono_configure.configure(env, env_mono)
 
-# Add sources
+# Android-specific dynamic export at linker flags para sa CoreCLR / Mono interop
+if env["platform"] == "android":
+    env_mono.Append(LINKFLAGS=["-Wl,--export-dynamic"])
+    env_mono.Append(LINKFLAGS=["-ldl", "-llog", "-landroid"])
+    env_mono.Append(CPPDEFINES=["ANDROID_ENABLED"])
 
+# Add sources
 env_mono.add_source_files(env.modules_sources, "*.cpp")
 env_mono.add_source_files(env.modules_sources, "glue/*.cpp")
 env_mono.add_source_files(env.modules_sources, "mono_gd/*.cpp")
