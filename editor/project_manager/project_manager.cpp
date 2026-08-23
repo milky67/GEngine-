@@ -589,8 +589,6 @@ void ProjectManager::_run_project_confirm() {
 }
 
 void ProjectManager::_open_selected_projects() {
-	// Show loading text to tell the user that the project manager is busy loading.
-	// This is especially important for the Web project manager.
 	loading_label->show();
 
 	const HashSet<String> &selected_list = project_list->get_selected_project_keys();
@@ -613,7 +611,6 @@ void ProjectManager::_open_selected_projects() {
 
 		args.push_back("--path");
 		args.push_back(path);
-
 		args.push_back("--editor");
 
 		if (open_in_recovery_mode) {
@@ -629,21 +626,23 @@ void ProjectManager::_open_selected_projects() {
 		}
 
 #ifdef ANDROID_ENABLED
-		// Force verbose logs on Android para laging makita ang C# / .NET output
 		args.push_back("--verbose");
 
-		print_line(".NET/Android: Setting restart-on-exit with project path: " + path);
+		print_line(".NET/Android: Preparing clean restart into Editor mode...");
 		
-		// SA ANDROID: Bawal ang create_instance(). 
-		// Gamitin ang set_restart_on_exit upang i-relaunch ng Android Java host ang engine sa Editor Mode.
+		// Sabihan ang Android OS na mag-restart gamit ang project arguments
 		OS::get_singleton()->set_restart_on_exit(true, args);
 
 		project_list->project_opening_initiated = true;
 		_dim_window();
+
+		// IMPORTANT: I-flush ang lahat ng logs bago mag-quit
+		fflush(stdout);
+		fflush(stderr);
+
 		get_tree()->quit();
 		return;
 #else
-		// SA DESKTOP PLATFORMS (Windows/Linux/macOS): Standard subprocess creation
 		Error err = OS::get_singleton()->create_instance(args);
 		if (err != OK) {
 			loading_label->hide();
@@ -655,7 +654,6 @@ void ProjectManager::_open_selected_projects() {
 	}
 
 	project_list->project_opening_initiated = true;
-
 	_dim_window();
 	get_tree()->quit();
 }
