@@ -1,10 +1,9 @@
-name: 🤖 Android C# (.NET) Editor Build
+name: 🤖 Android C# (.NET) Editor Build (All-In-One APK)
 
 on:
   workflow_dispatch:
   push:
     branches: [ master, main, 4.* ]
-  pull_request:
 
 env:
   SCONS_FLAGS: >-
@@ -45,25 +44,42 @@ jobs:
         run: |
           python ./misc/scripts/install_swappy_android.py
 
+      # 1. I-download ang .NET 8 Linux ARM64 Native Runtime (.so files)
+      - name: Auto-Download .NET 8 ARM64 Runtime Libraries
+        run: |
+          mkdir -p /tmp/dotnet-arm64
+          curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --runtime dotnet --version 8.0.8 --os linux --arch arm64 --install-dir /tmp/dotnet-arm64
+          
+          # Ihanda ang folders sa Android project
+          mkdir -p platform/android/java/editor/src/main/jniLibs/arm64-v8a
+          mkdir -p platform/android/java/editor/src/main/assets/GodotSharp
+          
+          # Isuksok ang lahat ng .so libraries
+          find /tmp/dotnet-arm64/ -name "*.so" -exec cp -v {} platform/android/java/editor/src/main/jniLibs/arm64-v8a/ \;
+
+      # 2. Build Host Linux Editor & Mono Glue
       - name: Build Host Linux Editor (for Mono Glue)
         run: |
           scons platform=linuxbsd target=editor module_mono_enabled=yes -j$(nproc)
           ./bin/godot.linuxbsd.editor.x86_64.mono --headless --generate-mono-glue modules/mono/glue
 
+      # 3. Build GodotSharp Assemblies
       - name: Build GodotSharp Assemblies
         run: |
           python ./modules/mono/build_scripts/build_assemblies.py --godot-output-dir=./bin --precision=single
 
+      # 4. Compile Android Engine
       - name: Compile Android Editor with C# (arm64)
         run: |
           scons platform=android target=editor arch=arm64 ${{ env.SCONS_FLAGS }} -j$(nproc)
 
+      # 5. Isama ang GodotSharp Assemblies sa Assets ng APK
       - name: Bundle GodotSharp inside Android Assets
         run: |
-          mkdir -p platform/android/java/editor/src/main/assets/GodotSharp
           cp -rv bin/GodotSharp/* platform/android/java/editor/src/main/assets/GodotSharp/
-          echo "GodotSharp successfully injected into Android assets!"
+          echo "All GodotSharp files and Native .so libs bundled!"
 
+      # 6. Generate All-in-One APK
       - name: Generate Android Editor APK
         run: |
           cd platform/android/java
@@ -71,6 +87,7 @@ jobs:
           cd ../../..
           ls -lh bin/android_editor_builds/
 
+      # 7. Upload Direct APK
       - name: Upload Android Editor APK
         uses: actions/upload-artifact@v4
         with:
