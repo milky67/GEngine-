@@ -1,4 +1,4 @@
-name: 🤖 Android C# (.NET) Editor Build (All-In-One APK)
+name: 🤖 Android C# (.NET & Mono) Editor Build (All-In-One APK)
 
 on:
   workflow_dispatch:
@@ -50,14 +50,13 @@ jobs:
           mkdir -p /tmp/dotnet-arm64
           curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --runtime dotnet --version 8.0.8 --os linux --arch arm64 --install-dir /tmp/dotnet-arm64
           
-          # Ihanda ang folders sa Android project
           mkdir -p platform/android/java/editor/src/main/jniLibs/arm64-v8a
           mkdir -p platform/android/java/editor/src/main/assets/GodotSharp
           
-          # Isuksok ang lahat ng .so libraries
+          # Isama ang lahat ng .so libraries sa jniLibs
           find /tmp/dotnet-arm64/ -name "*.so" -exec cp -v {} platform/android/java/editor/src/main/jniLibs/arm64-v8a/ \;
 
-      # 2. Build Host Linux Editor & Mono Glue
+      # 2. Build Host Linux Editor & Mono Glue (Headless)
       - name: Build Host Linux Editor (for Mono Glue)
         run: |
           scons platform=linuxbsd target=editor module_mono_enabled=yes -j$(nproc)
@@ -68,7 +67,7 @@ jobs:
         run: |
           python ./modules/mono/build_scripts/build_assemblies.py --godot-output-dir=./bin --precision=single
 
-      # 4. Compile Android Engine
+      # 4. Compile Android Engine with Mono
       - name: Compile Android Editor with C# (arm64)
         run: |
           scons platform=android target=editor arch=arm64 ${{ env.SCONS_FLAGS }} -j$(nproc)
