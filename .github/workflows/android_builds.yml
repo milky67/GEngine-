@@ -44,30 +44,37 @@ jobs:
         run: |
           python ./misc/scripts/install_swappy_android.py
 
-      # 1. Download .NET 8 Runtime at ayusin ang Android Bionic glibc compatibility (.so dependencies)
-      - name: Setup .NET 8 ARM64 Runtime & Bionic ABI Compatibility
+      # 1. I-DOWNLOAD ANG TUNAY NA ANDROID NATIVE .NET 8 RUNTIME (.so files na naka-compile para sa Bionic libc)
+      - name: Download Official Microsoft .NET 8 Android-ARM64 Native Runtime
         run: |
-          mkdir -p /tmp/dotnet-arm64
-          curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --runtime dotnet --version 8.0.8 --os linux --arch arm64 --install-dir /tmp/dotnet-arm64
+          mkdir -p /tmp/dotnet-android-arm64
+          cd /tmp/dotnet-android-arm64
           
-          mkdir -p platform/android/java/editor/src/main/jniLibs/arm64-v8a
-          mkdir -p platform/android/java/editor/src/main/assets/GodotSharp/Api
-          mkdir -p platform/android/java/editor/src/main/assets/GodotSharp/Tools
+          # I-download ang official Android-arm64 runtime pack mula sa NuGet
+          dotnet nuget add source https://api.nuget.org/v3/index.json -n nuget.org || true
           
-          # Isama ang lahat ng .so libraries mula sa .NET runtime sa jniLibs folder
-          find /tmp/dotnet-arm64/ -name "*.so" -exec cp -v {} platform/android/java/editor/src/main/jniLibs/arm64-v8a/ \;
+          echo "Downloading Microsoft.NETCore.App.Runtime.android-arm64 package..."
+          curl -sSL -o android_runtime.zip https://www.nuget.org/api/v2/package/Microsoft.NETCore.App.Runtime.android-arm64/8.0.8 || \
+          curl -sSL -o android_runtime.zip https://www.nuget.org/api/v2/package/Microsoft.NETCore.App.Runtime.android-arm64/8.0.0
+          
+          unzip -q android_runtime.zip
+          
+          # I-setup ang jniLibs para sa Android APK
+          mkdir -p $GITHUB_WORKSPACE/platform/android/java/editor/src/main/jniLibs/arm64-v8a
+          mkdir -p $GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Api
+          mkdir -p $GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Tools
 
-          # Kunin ang libc++_shared.so mula sa Android NDK
+          # Kopyahin ang mga tunay na Android native .so (libcoreclr.so, libhostfxr.so, libclrjit.so, etc.)
+          find . -name "*.so" -exec cp -v {} $GITHUB_WORKSPACE/platform/android/java/editor/src/main/jniLibs/arm64-v8a/ \;
+          
+          # Kopyahin din ang NDK libc++_shared.so
           NDK_LIBCXX=$(find $ANDROID_SDK_ROOT/ndk -name "libc++_shared.so" | grep "aarch64" | head -n 1)
           if [ -n "$NDK_LIBCXX" ]; then
-            cp -v "$NDK_LIBCXX" platform/android/java/editor/src/main/jniLibs/arm64-v8a/
-            # Gumawa ng fallback copy para sa libgcc_s.so.1 na hinahanap ng GNU coreclr
-            cp -v "$NDK_LIBCXX" platform/android/java/editor/src/main/jniLibs/arm64-v8a/libgcc_s.so.1
-            echo "Copied libc++_shared.so and created libgcc_s.so.1 compat stub!"
+            cp -v "$NDK_LIBCXX" $GITHUB_WORKSPACE/platform/android/java/editor/src/main/jniLibs/arm64-v8a/
           fi
 
-          echo "=== jniLibs/arm64-v8a contents ==="
-          ls -la platform/android/java/editor/src/main/jniLibs/arm64-v8a/
+          echo "=== Real Android .so libraries in jniLibs/arm64-v8a ==="
+          ls -lh $GITHUB_WORKSPACE/platform/android/java/editor/src/main/jniLibs/arm64-v8a/
 
       # 2. Build Host Linux Editor & Generate Mono Glue
       - name: Build Host Linux Editor (for Mono Glue)
@@ -88,10 +95,9 @@ jobs:
       # 5. Isama ang GodotSharp Assemblies sa Assets at i-configure ang Gradle
       - name: Bundle GodotSharp inside Android Assets
         run: |
-          # Kopyahin ang lahat ng nabuong GodotSharp binaries
           cp -rv bin/GodotSharp/* platform/android/java/editor/src/main/assets/GodotSharp/
           
-          # Tiyakin na uncompressed ang mga .dll files para mabasa ng memory map (mmap)
+          # I-disable ang DLL compression para mabasa ng mmap sa Android
           if [ -f platform/android/java/editor/build.gradle ]; then
             echo "" >> platform/android/java/editor/build.gradle
             echo "android {" >> platform/android/java/editor/build.gradle
@@ -101,7 +107,7 @@ jobs:
             echo "}" >> platform/android/java/editor/build.gradle
           fi
 
-          echo "=== GodotSharp Assets bundled successfully ==="
+          echo "=== Bundle Completed ==="
           ls -la platform/android/java/editor/src/main/assets/GodotSharp/
 
       # 6. Generate All-in-One APK
@@ -112,7 +118,7 @@ jobs:
           cd ../../..
           ls -lh bin/android_editor_builds/
 
-      # 7. Upload Direct APK Artifact
+      # 7. Upload Final Working APK
       - name: Upload GEngine Android Editor APK
         uses: actions/upload-artifact@v4
         with:
