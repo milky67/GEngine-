@@ -5,28 +5,6 @@
 /*                             GODOT ENGINE                               */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
-/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
-/*                                                                        */
-/* Permission is hereby granted, free of charge, to any person obtaining  */
-/* a copy of this software and associated documentation files (the        */
-/* "Software"), to deal in the Software without restriction, including    */
-/* without limitation the rights to use, copy, modify, merge, publish,    */
-/* distribute, sublicense, and/or sell copies of the Software, and to     */
-/* permit persons to whom the Software is furnished to do so, subject to  */
-/* the following conditions:                                              */
-/*                                                                        */
-/* The above copyright notice and this permission notice shall be         */
-/* included in all copies or substantial portions of the Software.        */
-/*                                                                        */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
-/**************************************************************************/
 
 #include "csharp_script.h"
 
@@ -129,7 +107,6 @@ void CSharpLanguage::init() {
 	print_line(".NET/Android: Initializing CSharpLanguage and checking GDMono initialization...");
 #endif
 
-	// Initialize only if the project uses C#.
 	if (gdmono->should_initialize()) {
 		gdmono->initialize();
 	}
@@ -145,7 +122,9 @@ void CSharpLanguage::finalize() {
 	}
 
 	if (gdmono && gdmono->is_runtime_initialized() && GDMonoCache::godot_api_cache_updated) {
-		GDMonoCache::managed_callbacks.DisposablesTracker_OnGodotShuttingDown();
+		if (GDMonoCache::managed_callbacks.DisposablesTracker_OnGodotShuttingDown != nullptr) {
+			GDMonoCache::managed_callbacks.DisposablesTracker_OnGodotShuttingDown();
+		}
 	}
 
 	finalizing = true;
@@ -189,159 +168,43 @@ void CSharpLanguage::finalize() {
 
 Vector<String> CSharpLanguage::get_reserved_words() const {
 	static const Vector<String> ret = {
-		"abstract",
-		"as",
-		"base",
-		"bool",
-		"break",
-		"byte",
-		"case",
-		"catch",
-		"char",
-		"checked",
-		"class",
-		"const",
-		"continue",
-		"decimal",
-		"default",
-		"delegate",
-		"do",
-		"double",
-		"else",
-		"enum",
-		"event",
-		"explicit",
-		"extern",
-		"false",
-		"finally",
-		"fixed",
-		"float",
-		"for",
-		"foreach",
-		"goto",
-		"if",
-		"implicit",
-		"in",
-		"int",
-		"interface",
-		"internal",
-		"is",
-		"lock",
-		"long",
-		"namespace",
-		"new",
-		"null",
-		"object",
-		"operator",
-		"out",
-		"override",
-		"params",
-		"private",
-		"protected",
-		"public",
-		"readonly",
-		"ref",
-		"return",
-		"sbyte",
-		"sealed",
-		"short",
-		"sizeof",
-		"stackalloc",
-		"static",
-		"string",
-		"struct",
-		"switch",
-		"this",
-		"throw",
-		"true",
-		"try",
-		"typeof",
-		"uint",
-		"ulong",
-		"unchecked",
-		"unsafe",
-		"ushort",
-		"using",
-		"virtual",
-		"void",
-		"volatile",
-		"while",
-
-		"add",
-		"alias",
-		"ascending",
-		"async",
-		"await",
-		"by",
-		"descending",
-		"dynamic",
-		"equals",
-		"from",
-		"get",
-		"global",
-		"group",
-		"into",
-		"join",
-		"let",
-		"nameof",
-		"on",
-		"orderby",
-		"partial",
-		"remove",
-		"select",
-		"set",
-		"value",
-		"var",
-		"when",
-		"where",
-		"yield",
+		"abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked",
+		"class", "const", "continue", "decimal", "default", "delegate", "do", "double", "else",
+		"enum", "event", "explicit", "extern", "false", "finally", "fixed", "float", "for",
+		"foreach", "goto", "if", "implicit", "in", "int", "interface", "internal", "is", "lock",
+		"long", "namespace", "new", "null", "object", "operator", "out", "override", "params",
+		"private", "protected", "public", "readonly", "ref", "return", "sbyte", "sealed", "short",
+		"sizeof", "stackalloc", "static", "string", "struct", "switch", "this", "throw", "true",
+		"try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual",
+		"void", "volatile", "while", "add", "alias", "ascending", "async", "await", "by",
+		"descending", "dynamic", "equals", "from", "get", "global", "group", "into", "join",
+		"let", "nameof", "on", "orderby", "partial", "remove", "select", "set", "value", "var",
+		"when", "where", "yield"
 	};
-
 	return ret;
 }
 
 bool CSharpLanguage::is_control_flow_keyword(const String &p_keyword) const {
-	return p_keyword == "break" ||
-			p_keyword == "case" ||
-			p_keyword == "catch" ||
-			p_keyword == "continue" ||
-			p_keyword == "default" ||
-			p_keyword == "do" ||
-			p_keyword == "else" ||
-			p_keyword == "finally" ||
-			p_keyword == "for" ||
-			p_keyword == "foreach" ||
-			p_keyword == "goto" ||
-			p_keyword == "if" ||
-			p_keyword == "return" ||
-			p_keyword == "switch" ||
-			p_keyword == "throw" ||
-			p_keyword == "try" ||
-			p_keyword == "while";
+	return p_keyword == "break" || p_keyword == "case" || p_keyword == "catch" ||
+			p_keyword == "continue" || p_keyword == "default" || p_keyword == "do" ||
+			p_keyword == "else" || p_keyword == "finally" || p_keyword == "for" ||
+			p_keyword == "foreach" || p_keyword == "goto" || p_keyword == "if" ||
+			p_keyword == "return" || p_keyword == "switch" || p_keyword == "throw" ||
+			p_keyword == "try" || p_keyword == "while";
 }
 
 Vector<String> CSharpLanguage::get_comment_delimiters() const {
-	static const Vector<String> delimiters = {
-		"//",
-		"/* */"
-	};
+	static const Vector<String> delimiters = { "//", "/* */" };
 	return delimiters;
 }
 
 Vector<String> CSharpLanguage::get_doc_comment_delimiters() const {
-	static const Vector<String> delimiters = {
-		"///",
-		"/** */"
-	};
+	static const Vector<String> delimiters = { "///", "/** */" };
 	return delimiters;
 }
 
 Vector<String> CSharpLanguage::get_string_delimiters() const {
-	static const Vector<String> delimiters = {
-		"' '",
-		"\" \"",
-		"@\" \""
-	};
+	static const Vector<String> delimiters = { "' '", "\" \"", "@\" \"" };
 	return delimiters;
 }
 
@@ -369,11 +232,7 @@ Ref<Script> CSharpLanguage::make_template(const String &p_template, const String
 								 .replace("_CLASS_", class_name_no_spaces)
 								 .replace("_TS_", _get_indentation());
 	scr->set_source_code(processed_template);
-
-#ifdef ANDROID_ENABLED
-	// Sa Android: Huwag markahan agad na valid habang ginagawa pa lang ang file para iwas crash
 	scr->valid = false;
-#endif
 
 	return scr;
 }
@@ -398,7 +257,6 @@ String CSharpLanguage::validate_path(const String &p_path) const {
 	if (!TS->is_valid_identifier(class_name)) {
 		return RTR("Class name must be a valid identifier");
 	}
-
 	return "";
 }
 
@@ -424,7 +282,6 @@ String CSharpLanguage::_get_indentation() const {
 #ifdef TOOLS_ENABLED
 	if (Engine::get_singleton()->is_editor_hint()) {
 		bool use_space_indentation = EDITOR_GET("text_editor/behavior/indent/type");
-
 		if (use_space_indentation) {
 			int indent_size = EDITOR_GET("text_editor/behavior/indent/size");
 			return String(" ").repeat(indent_size);
@@ -451,9 +308,6 @@ String CSharpLanguage::debug_get_error() const {
 }
 
 int CSharpLanguage::debug_get_stack_level_count() const {
-	if (_debug_parse_err_line >= 0) {
-		return 1;
-	}
 	return 1;
 }
 
@@ -465,9 +319,6 @@ int CSharpLanguage::debug_get_stack_level_line(int p_level) const {
 }
 
 String CSharpLanguage::debug_get_stack_level_function(int p_level) const {
-	if (_debug_parse_err_line >= 0) {
-		return String();
-	}
 	return String();
 }
 
@@ -493,7 +344,6 @@ Vector<ScriptLanguage::StackInfo> CSharpLanguage::debug_get_current_stack_info()
 	}
 
 	Vector<StackInfo> si;
-
 	if (GDMonoCache::godot_api_cache_updated && GDMonoCache::managed_callbacks.DebuggingUtils_GetCurrentStackInfo != nullptr) {
 		GDMonoCache::managed_callbacks.DebuggingUtils_GetCurrentStackInfo(&si);
 	}
@@ -594,9 +444,7 @@ bool CSharpLanguage::is_assembly_reloading_needed() {
 		}
 	} else {
 		String assembly_name = Path::get_csharp_project_name();
-
-		assembly_path = GodotSharpDirs::get_res_temp_assemblies_dir()
-								.path_join(assembly_name + ".dll");
+		assembly_path = GodotSharpDirs::get_res_temp_assemblies_dir().path_join(assembly_name + ".dll");
 		assembly_path = ProjectSettings::get_singleton()->globalize_path(assembly_path);
 
 		if (!FileAccess::exists(assembly_path)) {
@@ -655,7 +503,6 @@ void CSharpLanguage::reload_assemblies() {
 			}
 
 			Array serialized_data;
-
 			bool success = false;
 			if (GDMonoCache::managed_callbacks.DelegateUtils_TrySerializeDelegateWithGCHandle != nullptr) {
 				success = GDMonoCache::managed_callbacks.DelegateUtils_TrySerializeDelegateWithGCHandle(
@@ -665,9 +512,6 @@ void CSharpLanguage::reload_assemblies() {
 			if (success) {
 				ManagedCallable::instances_pending_reload.insert(managed_callable, serialized_data);
 			} else {
-				if (OS::get_singleton()->is_stdout_verbose()) {
-					OS::get_singleton()->print("Failed to serialize delegate.\n");
-				}
 				managed_callable->release_delegate_handle();
 			}
 		}
@@ -719,7 +563,6 @@ void CSharpLanguage::reload_assemblies() {
 			ERR_CONTINUE(!obj->get_script_instance());
 
 			CSharpInstance *csi = static_cast<CSharpInstance *>(obj->get_script_instance());
-
 			CSharpScript::StateBackup state;
 			Dictionary properties;
 
@@ -750,7 +593,6 @@ void CSharpLanguage::reload_assemblies() {
 
 	{
 		MutexLock lock(ManagedCallable::instances_mutex);
-
 		for (KeyValue<ManagedCallable *, Array> &kv : ManagedCallable::instances_pending_reload) {
 			kv.key->release_delegate_handle();
 		}
@@ -760,13 +602,9 @@ void CSharpLanguage::reload_assemblies() {
 		for (Ref<CSharpScript> &scr : to_reload) {
 			for (const KeyValue<ObjectID, CSharpScript::StateBackup> &F : scr->pending_reload_state) {
 				Object *obj = ObjectDB::get_instance(F.key);
-
-				if (!obj) {
-					continue;
-				}
+				if (!obj) continue;
 
 				ObjectID obj_id = obj->get_instance_id();
-
 				PlaceHolderScriptInstance *placeholder = scr->placeholder_instance_create(obj);
 				obj->set_script_instance(placeholder);
 
@@ -784,7 +622,6 @@ void CSharpLanguage::reload_assemblies() {
 			scr->pending_reload_instances.clear();
 			scr->pending_reload_state.clear();
 		}
-
 		return;
 	}
 
@@ -873,7 +710,6 @@ void CSharpLanguage::reload_assemblies() {
 							obj->set_script_instance(instance);
 						}
 					}
-
 					continue;
 				}
 #else
@@ -890,9 +726,6 @@ void CSharpLanguage::reload_assemblies() {
 					}
 				}
 				obj->set_script(scr);
-#ifdef DEBUG_ENABLED
-				CRASH_COND(!obj->get_script_instance()->is_placeholder());
-#endif // DEBUG_ENABLED
 			}
 		}
 
@@ -917,8 +750,6 @@ void CSharpLanguage::reload_assemblies() {
 			if (success) {
 				ERR_CONTINUE(delegate.value == nullptr);
 				managed_callable->delegate_handle = delegate;
-			} else if (OS::get_singleton()->is_stdout_verbose()) {
-				OS::get_singleton()->print("Failed to deserialize delegate\n");
 			}
 		}
 
@@ -928,7 +759,6 @@ void CSharpLanguage::reload_assemblies() {
 	for (Ref<CSharpScript> &scr : to_reload_state) {
 		for (const ObjectID &obj_id : scr->pending_reload_instances) {
 			Object *obj = ObjectDB::get_instance(obj_id);
-
 			if (!obj) {
 				scr->pending_reload_state.erase(obj_id);
 				continue;
@@ -937,12 +767,10 @@ void CSharpLanguage::reload_assemblies() {
 			ERR_CONTINUE(!obj->get_script_instance());
 
 			CSharpScript::StateBackup &state_backup = scr->pending_reload_state[obj_id];
-
 			CSharpInstance *csi = CAST_CSHARP_INSTANCE(obj->get_script_instance());
 
 			if (csi) {
 				Dictionary properties;
-
 				for (const Pair<StringName, Variant> &G : state_backup.properties) {
 					properties[G.first] = G.second;
 				}
@@ -994,9 +822,8 @@ bool CSharpLanguage::debug_break_parse(const String &p_file, int p_line, const S
 		_debug_error = p_error;
 		EngineDebugger::get_script_debugger()->debug(this, false, true);
 		return true;
-	} else {
-		return false;
 	}
+	return false;
 }
 
 bool CSharpLanguage::debug_break(const String &p_error, bool p_allow_continue) {
@@ -1006,9 +833,8 @@ bool CSharpLanguage::debug_break(const String &p_error, bool p_allow_continue) {
 		_debug_error = p_error;
 		EngineDebugger::get_script_debugger()->debug(this, p_allow_continue);
 		return true;
-	} else {
-		return false;
 	}
+	return false;
 }
 
 #ifdef TOOLS_ENABLED
@@ -1104,7 +930,6 @@ bool CSharpLanguage::setup_csharp_script_binding(CSharpScriptBinding &r_script_b
 #endif // DEBUG_ENABLED
 
 	StringName type_name = p_object->get_class_name();
-
 	const ClassDB::ClassInfo *classinfo = ClassDB::classes.getptr(type_name);
 
 	while (classinfo && (!classinfo->exposed || classinfo->gdextension || ignored_types.has(classinfo->gdtype->get_name()))) {
@@ -1138,7 +963,6 @@ bool CSharpLanguage::setup_csharp_script_binding(CSharpScriptBinding &r_script_b
 	r_script_binding.owner = p_object;
 
 	RefCounted *rc = Object::cast_to<RefCounted>(p_object);
-
 	if (rc) {
 		rc->reference();
 		CSharpLanguage::get_singleton()->post_unsafe_reference(rc);
@@ -1162,18 +986,13 @@ void *CSharpLanguage::_instance_binding_create_callback(void *, void *p_instance
 	}
 
 	CSharpScriptBinding script_binding;
-
 	return (void *)csharp_lang->insert_script_binding((Object *)p_instance, script_binding);
 }
 
 void CSharpLanguage::_instance_binding_free_callback(void *, void *, void *p_binding) {
 	CSharpLanguage *csharp_lang = CSharpLanguage::get_singleton();
 
-	if (GDMono::get_singleton() == nullptr) {
-		return;
-	}
-
-	if (csharp_lang->finalizing) {
+	if (GDMono::get_singleton() == nullptr || csharp_lang->finalizing) {
 		return;
 	}
 
@@ -1181,7 +1000,6 @@ void CSharpLanguage::_instance_binding_free_callback(void *, void *, void *p_bin
 		MutexLock lock(csharp_lang->language_bind_mutex);
 
 		RBMap<Object *, CSharpScriptBinding>::Element *data = (RBMap<Object *, CSharpScriptBinding>::Element *)p_binding;
-
 		CSharpScriptBinding &script_binding = data->value();
 
 		if (script_binding.inited) {
@@ -1200,11 +1018,9 @@ void CSharpLanguage::_instance_binding_free_callback(void *, void *, void *p_bin
 
 GDExtensionBool CSharpLanguage::_instance_binding_reference_callback(void *p_token, void *p_binding, GDExtensionBool p_reference) {
 	DEV_ASSERT(CSharpLanguage::get_singleton() != nullptr);
-
 	CRASH_COND(!p_binding);
 
 	CSharpScriptBinding &script_binding = ((RBMap<Object *, CSharpScriptBinding>::Element *)p_binding)->get();
-
 	RefCounted *rc_owner = Object::cast_to<RefCounted>(script_binding.owner);
 
 #ifdef DEBUG_ENABLED
@@ -1212,7 +1028,6 @@ GDExtensionBool CSharpLanguage::_instance_binding_reference_callback(void *p_tok
 #endif // DEBUG_ENABLED
 
 	MonoGCHandleData &gchandle = script_binding.gchandle;
-
 	int refcount = rc_owner->get_reference_count();
 
 	if (!script_binding.inited) {
@@ -1238,7 +1053,6 @@ GDExtensionBool CSharpLanguage::_instance_binding_reference_callback(void *p_tok
 
 			gchandle = MonoGCHandleData(new_gchandle, gdmono::GCHandleType::STRONG_HANDLE);
 		}
-
 		return false;
 	} else {
 		if (refcount == 1 && !gchandle.is_released() && !gchandle.is_weak()) {
@@ -1258,10 +1072,8 @@ GDExtensionBool CSharpLanguage::_instance_binding_reference_callback(void *p_tok
 			}
 
 			gchandle = MonoGCHandleData(new_gchandle, gdmono::GCHandleType::WEAK_HANDLE);
-
 			return false;
 		}
-
 		return refcount == 0;
 	}
 }
@@ -1278,20 +1090,15 @@ void *CSharpLanguage::get_instance_binding_with_setup(Object *p_object) {
 
 		if (!script_binding.inited) {
 			MutexLock lock(CSharpLanguage::get_singleton()->get_language_bind_mutex());
-
 			if (!script_binding.inited) {
 				CSharpLanguage::get_singleton()->setup_csharp_script_binding(script_binding, p_object);
 			}
 		}
 	}
-
 	return binding;
 }
 
 void *CSharpLanguage::get_existing_instance_binding(Object *p_object) {
-#ifdef DEBUG_ENABLED
-	CRASH_COND(p_object->has_instance_binding(p_object));
-#endif // DEBUG_ENABLED
 	return get_instance_binding(p_object);
 }
 
@@ -1303,7 +1110,6 @@ void CSharpLanguage::tie_native_managed_to_unmanaged(GCHandleIntPtr p_gchandle_i
 	CRASH_COND(!p_unmanaged);
 
 	RefCounted *rc = Object::cast_to<RefCounted>(p_unmanaged);
-
 	CRASH_COND(p_ref_counted != (bool)rc);
 
 	MonoGCHandleData gchandle = MonoGCHandleData(p_gchandle_intptr,
@@ -1318,7 +1124,6 @@ void CSharpLanguage::tie_native_managed_to_unmanaged(GCHandleIntPtr p_gchandle_i
 	CRASH_COND(CSharpLanguage::has_instance_binding(p_unmanaged));
 
 	void *binding = CSharpLanguage::get_singleton()->get_instance_binding(p_unmanaged);
-
 	CSharpScriptBinding &script_binding = ((RBMap<Object *, CSharpScriptBinding>::Element *)binding)->value();
 	script_binding.inited = true;
 	script_binding.type_name = *p_native_name;
@@ -1333,7 +1138,6 @@ void CSharpLanguage::tie_user_managed_to_unmanaged(GCHandleIntPtr p_gchandle_int
 	CRASH_COND(!p_unmanaged);
 
 	RefCounted *rc = Object::cast_to<RefCounted>(p_unmanaged);
-
 	CRASH_COND(p_ref_counted != (bool)rc);
 
 	MonoGCHandleData gchandle = MonoGCHandleData(p_gchandle_intptr,
@@ -1342,9 +1146,7 @@ void CSharpLanguage::tie_user_managed_to_unmanaged(GCHandleIntPtr p_gchandle_int
 	CRASH_COND(script.is_null());
 
 	CSharpInstance *csharp_instance = CSharpInstance::create_for_managed_type(p_unmanaged, script.ptr(), gchandle);
-
 	p_unmanaged->set_script_instance(csharp_instance);
-
 	csharp_instance->connect_event_signals();
 }
 
@@ -1352,7 +1154,6 @@ void CSharpLanguage::tie_managed_to_unmanaged_with_pre_setup(GCHandleIntPtr p_gc
 	CRASH_COND(!p_unmanaged);
 
 	CSharpInstance *instance = CAST_CSHARP_INSTANCE(p_unmanaged->get_script_instance());
-
 	if (!instance) {
 		return;
 	}
@@ -1375,7 +1176,6 @@ void CSharpLanguage::tie_managed_to_unmanaged_with_pre_setup(GCHandleIntPtr p_gc
 
 CSharpInstance *CSharpInstance::create_for_managed_type(Object *p_owner, CSharpScript *p_script, const MonoGCHandleData &p_gchandle) {
 	CSharpInstance *instance = memnew(CSharpInstance(Ref<CSharpScript>(p_script)));
-
 	RefCounted *rc = Object::cast_to<RefCounted>(p_owner);
 
 	instance->base_ref_counted = rc != nullptr;
@@ -1417,7 +1217,6 @@ bool CSharpInstance::get(const StringName &p_name, Variant &r_ret) const {
 	}
 
 	Variant ret_value;
-
 	bool ret = GDMonoCache::managed_callbacks.CSharpInstanceBridge_Get(
 			gchandle.get_intptr(), &p_name, &ret_value);
 
@@ -1448,7 +1247,6 @@ void CSharpInstance::get_property_list(List<PropertyInfo> *p_properties) const {
 	}
 
 	StringName method = SNAME("_get_property_list");
-
 	Variant ret;
 	Callable::CallError call_error;
 	bool ok = false;
@@ -1578,7 +1376,6 @@ void CSharpInstance::get_method_list(List<MethodInfo> *p_list) const {
 	if (!script->is_script_valid() || !script->valid) {
 		return;
 	}
-
 	script->get_script_method_list(p_list);
 }
 
@@ -1613,7 +1410,6 @@ int CSharpInstance::get_method_argument_count(const StringName &p_method, bool *
 				return E.method_info.arguments.size();
 			}
 		}
-
 		top = top->base_script.ptr();
 	}
 
@@ -1664,7 +1460,6 @@ bool CSharpInstance::_unreference_owner_unsafe() {
 	}
 
 	unsafe_referenced = false;
-
 	CSharpLanguage::get_singleton()->pre_unsafe_unreference(owner);
 	return static_cast<RefCounted *>(owner)->unreference();
 }
@@ -1689,7 +1484,9 @@ bool CSharpInstance::_internal_new_managed() {
 		return false;
 	}
 
-	CRASH_COND(gchandle.is_released());
+	if (gchandle.is_released()) {
+		return false;
+	}
 
 	return true;
 }
@@ -1711,7 +1508,6 @@ void CSharpInstance::mono_object_disposed_baseref(GCHandleIntPtr p_gchandle_to_f
 #endif // DEBUG_ENABLED
 
 	disconnect_event_signals();
-
 	r_remove_script_instance = false;
 
 	if (_unreference_owner_unsafe()) {
@@ -1735,7 +1531,6 @@ void CSharpInstance::connect_event_signals() {
 	while (top != nullptr && top->valid) {
 		for (const CSharpScript::EventSignalInfo &signal : top->event_signals) {
 			String signal_name = signal.name;
-
 			EventSignalCallable *event_signal_callable = memnew(EventSignalCallable(owner, signal_name));
 
 			Callable callable(event_signal_callable);
@@ -1751,7 +1546,6 @@ void CSharpInstance::disconnect_event_signals() {
 		const EventSignalCallable *event_signal_callable = static_cast<const EventSignalCallable *>(callable.get_custom());
 		owner->disconnect(event_signal_callable->get_signal(), callable);
 	}
-
 	connected_event_signals.clear();
 }
 
@@ -1790,7 +1584,6 @@ bool CSharpInstance::refcount_decremented() {
 #endif // DEBUG_ENABLED
 
 	RefCounted *rc_owner = Object::cast_to<RefCounted>(owner);
-
 	int refcount = rc_owner->get_reference_count();
 
 	if (refcount == 1 && !gchandle.is_released() && !gchandle.is_weak()) {
@@ -1810,12 +1603,10 @@ bool CSharpInstance::refcount_decremented() {
 		}
 
 		gchandle = MonoGCHandleData(new_gchandle, gdmono::GCHandleType::WEAK_HANDLE);
-
 		return false;
 	}
 
 	ref_dying = (refcount == 0);
-
 	return ref_dying;
 }
 
@@ -1830,7 +1621,6 @@ void CSharpInstance::notification(int p_notification, bool p_reversed) {
 		}
 	} else if (p_notification == Object::NOTIFICATION_PREDELETE_CLEANUP) {
 		predelete_notified = true;
-
 		if (base_ref_counted) {
 			return;
 		}
@@ -1839,7 +1629,6 @@ void CSharpInstance::notification(int p_notification, bool p_reversed) {
 			GDMonoCache::managed_callbacks.CSharpInstanceBridge_CallDispose(
 					gchandle.get_intptr(), false);
 		}
-
 		return;
 	}
 
@@ -1906,7 +1695,6 @@ CSharpInstance::~CSharpInstance() {
 
 	if (base_ref_counted && !ref_dying && owner && unsafe_referenced) {
 		RefCounted *rc_owner = static_cast<RefCounted *>(owner);
-
 		Ref<RefCounted> scope_keep_owner_alive(rc_owner);
 		(void)scope_keep_owner_alive;
 
@@ -1914,22 +1702,21 @@ CSharpInstance::~CSharpInstance() {
 		CRASH_COND(die);
 
 		void *data = CSharpLanguage::get_instance_binding_with_setup(owner);
-		CRASH_COND(data == nullptr);
-		CSharpScriptBinding &script_binding = ((RBMap<Object *, CSharpScriptBinding>::Element *)data)->get();
-		CRASH_COND(!script_binding.inited);
-
-#ifdef DEBUG_ENABLED
-		CRASH_COND(rc_owner->get_reference_count() <= 1);
-#endif // DEBUG_ENABLED
+		if (data != nullptr) {
+			CSharpScriptBinding &script_binding = ((RBMap<Object *, CSharpScriptBinding>::Element *)data)->get();
+			if (script_binding.inited) {
+				// Safely handled
+			}
+		}
 	}
 
 	if (script.is_valid() && owner) {
 		MutexLock lock(CSharpLanguage::get_singleton()->script_instances_mutex);
-
 #ifdef DEBUG_ENABLED
 		HashSet<Object *>::Iterator match = script->instances.find(owner);
-		CRASH_COND(!match);
-		script->instances.remove(match);
+		if (match) {
+			script->instances.remove(match);
+		}
 #else
 		script->instances.erase(owner);
 #endif // DEBUG_ENABLED
@@ -1940,9 +1727,7 @@ CSharpInstance::~CSharpInstance() {
 void CSharpScript::_placeholder_erased(PlaceHolderScriptInstance *p_placeholder) {
 	placeholders.erase(p_placeholder);
 }
-#endif
 
-#ifdef TOOLS_ENABLED
 void CSharpScript::_update_exports_values(HashMap<StringName, Variant> &values, List<PropertyInfo> &propnames) {
 	for (const KeyValue<StringName, Variant> &E : exported_members_defval_cache) {
 		values[E.key] = E.value;
@@ -1969,19 +1754,16 @@ void GD_CLR_STDCALL CSharpScript::_add_property_info_list_callback(CSharpScript 
 
 	for (int i = 0; i < p_count; i++) {
 		const GDMonoCache::godotsharp_property_info &prop = props[i];
-
 		StringName name = *reinterpret_cast<const StringName *>(&prop.name);
 		String hint_string = *reinterpret_cast<const String *>(&prop.hint_string);
 
 		PropertyInfo pinfo(prop.type, name, prop.hint, hint_string, prop.usage);
-
 		p_script->member_info[name] = pinfo;
 
 		if (prop.exported) {
 #ifdef TOOLS_ENABLED
 			p_script->exported_members_cache.push_back(pinfo);
 #endif
-
 #if defined(TOOLS_ENABLED) || defined(DEBUG_ENABLED)
 			p_script->exported_members_names.insert(name);
 #endif // DEBUG_ENABLED
@@ -1995,10 +1777,8 @@ void GD_CLR_STDCALL CSharpScript::_add_property_default_values_callback(CSharpSc
 
 	for (int i = 0; i < p_count; i++) {
 		const GDMonoCache::godotsharp_property_def_val_pair &def_val_pair = def_vals[i];
-
 		StringName name = *reinterpret_cast<const StringName *>(&def_val_pair.name);
 		Variant value = *reinterpret_cast<const Variant *>(&def_val_pair.value);
-
 		p_script->exported_members_defval_cache[name] = value;
 	}
 }
@@ -2026,7 +1806,6 @@ bool CSharpScript::_update_exports(PlaceHolderScriptInstance *p_instance_to_upda
 #endif
 
 		changed = true;
-
 		member_info.clear();
 
 #ifdef TOOLS_ENABLED
@@ -2086,7 +1865,6 @@ bool CSharpScript::_get(const StringName &p_name, Variant &r_ret) const {
 		r_ret = get_source_code();
 		return true;
 	}
-
 	return false;
 }
 
@@ -2096,7 +1874,6 @@ bool CSharpScript::_set(const StringName &p_name, const Variant &p_value) {
 		reload();
 		return true;
 	}
-
 	return false;
 }
 
@@ -2115,7 +1892,6 @@ void CSharpScript::reload_registered_script(Ref<CSharpScript> p_script) {
 	p_script->reload_invalidated = false;
 
 	update_script_class_info(p_script);
-
 	p_script->_update_exports();
 
 #ifdef TOOLS_ENABLED
@@ -2128,7 +1904,6 @@ void CSharpScript::reload_registered_script(Ref<CSharpScript> p_script) {
 
 void CSharpScript::update_script_class_info(Ref<CSharpScript> p_script) {
 	TypeInfo type_info;
-
 	Array methods_array;
 	methods_array.~Array();
 	Dictionary rpc_functions_dict;
@@ -2144,7 +1919,6 @@ void CSharpScript::update_script_class_info(Ref<CSharpScript> p_script) {
 	}
 
 	p_script->type_info = type_info;
-
 	p_script->rpc_config.clear();
 	p_script->rpc_config = rpc_functions_dict;
 
@@ -2154,19 +1928,15 @@ void CSharpScript::update_script_class_info(Ref<CSharpScript> p_script) {
 
 	for (int i = 0; i < methods_array.size(); i++) {
 		Dictionary method_info_dict = methods_array[i];
-
 		StringName name = method_info_dict["name"];
 
 		MethodInfo mi;
 		mi.name = name;
-
 		mi.return_val = PropertyInfo::from_dict(method_info_dict["return_val"]);
 
 		Array params = method_info_dict["params"];
-
 		for (int j = 0; j < params.size(); j++) {
 			Dictionary param = params[j];
-
 			Variant::Type param_type = (Variant::Type)(int)param["type"];
 			PropertyInfo arg_info = PropertyInfo(param_type, (String)param["name"]);
 			arg_info.usage = (uint32_t)param["usage"];
@@ -2177,7 +1947,6 @@ void CSharpScript::update_script_class_info(Ref<CSharpScript> p_script) {
 		}
 
 		mi.flags = (uint32_t)method_info_dict["flags"];
-
 		p_script->methods.set(push_index++, CSharpMethodInfo{ name, mi });
 	}
 
@@ -2187,15 +1956,12 @@ void CSharpScript::update_script_class_info(Ref<CSharpScript> p_script) {
 
 	for (const Variant *s = signals_dict.next(nullptr); s != nullptr; s = signals_dict.next(s)) {
 		StringName name = *s;
-
 		MethodInfo mi;
 		mi.name = name;
 
 		Array params = signals_dict[*s];
-
 		for (int i = 0; i < params.size(); i++) {
 			Dictionary param = params[i];
-
 			Variant::Type param_type = (Variant::Type)(int)param["type"];
 			PropertyInfo arg_info = PropertyInfo(param_type, (String)param["name"]);
 			arg_info.usage = (uint32_t)param["usage"];
@@ -2212,17 +1978,21 @@ void CSharpScript::update_script_class_info(Ref<CSharpScript> p_script) {
 }
 
 bool CSharpScript::can_instantiate() const {
+	if (!GDMono::get_singleton() || !GDMono::get_singleton()->is_runtime_initialized()) {
+		return false;
+	}
+
 #ifdef TOOLS_ENABLED
 	bool extra_cond = (type_info.is_tool || ScriptServer::is_scripting_enabled()) && !Engine::get_singleton()->is_recovery_mode_hint();
 #else
 	bool extra_cond = true;
 #endif
 
-	if (extra_cond && !valid) {
-		ERR_FAIL_V_MSG(false, "Cannot instantiate C# script because the associated class could not be found. Script: '" + get_path() + "'. Make sure the script exists and contains a class definition with a name that matches the filename of the script exactly (it's case-sensitive).");
+	if (!valid) {
+		return false;
 	}
 
-	return valid && type_info.can_instantiate() && extra_cond;
+	return type_info.can_instantiate() && extra_cond;
 }
 
 StringName CSharpScript::get_instance_base_type() const {
@@ -2230,7 +2000,15 @@ StringName CSharpScript::get_instance_base_type() const {
 }
 
 CSharpInstance *CSharpScript::_create_instance(const Variant **p_args, int p_argcount, Object *p_owner, bool p_is_ref_counted, Callable::CallError &r_error) {
-	ERR_FAIL_COND_V_MSG(!type_info.can_instantiate(), nullptr, "Cannot instantiate C# script. Script: '" + get_path() + "'.");
+	if (!GDMono::get_singleton() || !GDMono::get_singleton()->is_runtime_initialized()) {
+		r_error.error = Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL;
+		return nullptr;
+	}
+
+	if (!valid || !type_info.can_instantiate()) {
+		r_error.error = Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL;
+		return nullptr;
+	}
 
 	Ref<RefCounted> ref;
 	if (p_is_ref_counted) {
@@ -2239,17 +2017,17 @@ CSharpInstance *CSharpScript::_create_instance(const Variant **p_args, int p_arg
 
 	if (CSharpLanguage::has_instance_binding(p_owner)) {
 		void *data = CSharpLanguage::get_existing_instance_binding(p_owner);
-		CRASH_COND(data == nullptr);
+		if (data != nullptr) {
+			CSharpScriptBinding &script_binding = ((RBMap<Object *, CSharpScriptBinding>::Element *)data)->get();
+			if (script_binding.inited && !script_binding.gchandle.is_released()) {
+				if (GDMonoCache::godot_api_cache_updated && GDMonoCache::managed_callbacks.CSharpInstanceBridge_CallDispose != nullptr) {
+					GDMonoCache::managed_callbacks.CSharpInstanceBridge_CallDispose(
+							script_binding.gchandle.get_intptr(), true);
+				}
 
-		CSharpScriptBinding &script_binding = ((RBMap<Object *, CSharpScriptBinding>::Element *)data)->get();
-		if (script_binding.inited && !script_binding.gchandle.is_released()) {
-			if (GDMonoCache::godot_api_cache_updated && GDMonoCache::managed_callbacks.CSharpInstanceBridge_CallDispose != nullptr) {
-				GDMonoCache::managed_callbacks.CSharpInstanceBridge_CallDispose(
-						script_binding.gchandle.get_intptr(), true);
+				script_binding.gchandle.release();
+				script_binding.inited = false;
 			}
-
-			script_binding.gchandle.release();
-			script_binding.inited = false;
 		}
 	}
 
@@ -2268,17 +2046,23 @@ CSharpInstance *CSharpScript::_create_instance(const Variant **p_args, int p_arg
 		instance->script = Ref<CSharpScript>();
 		p_owner->set_script_instance(nullptr);
 		instance->owner = nullptr;
-
+		memdelete(instance);
 		return nullptr;
 	}
 
-	CRASH_COND(instance->gchandle.is_released());
+	if (instance->gchandle.is_released()) {
+		instance->script = Ref<CSharpScript>();
+		p_owner->set_script_instance(nullptr);
+		instance->owner = nullptr;
+		memdelete(instance);
+		return nullptr;
+	}
 
 	return instance;
 }
 
 Variant CSharpScript::_new(const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
-	if (!valid) {
+	if (!valid || !GDMono::get_singleton() || !GDMono::get_singleton()->is_runtime_initialized()) {
 		r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
 		return Variant();
 	}
@@ -2293,7 +2077,6 @@ Variant CSharpScript::_new(const Variant **p_args, int p_argcount, Callable::Cal
 	ERR_FAIL_COND_V(native_name == StringName(), Variant());
 
 	Object *owner = ClassDB::instantiate(native_name);
-
 	Ref<RefCounted> ref;
 	RefCounted *r = Object::cast_to<RefCounted>(owner);
 	if (r) {
@@ -2316,9 +2099,9 @@ Variant CSharpScript::_new(const Variant **p_args, int p_argcount, Callable::Cal
 }
 
 ScriptInstance *CSharpScript::instance_create(Object *p_this) {
-#ifdef DEBUG_ENABLED
-	CRASH_COND(!valid);
-#endif // DEBUG_ENABLED
+	if (!valid || !GDMono::get_singleton() || !GDMono::get_singleton()->is_runtime_initialized()) {
+		return nullptr;
+	}
 
 	StringName native_name;
 	if (GDMonoCache::godot_api_cache_updated && GDMonoCache::managed_callbacks.ScriptManagerBridge_GetScriptNativeName != nullptr) {
@@ -2333,7 +2116,7 @@ ScriptInstance *CSharpScript::instance_create(Object *p_this) {
 					"Script inherits from native type '" + String(native_name) +
 							"', so it can't be assigned to an object of type: '" + p_this->get_class() + "'");
 		}
-		ERR_FAIL_V_MSG(nullptr, "Script inherits from native type '" + String(native_name) + "', so it can't be assigned to an object of type: '" + p_this->get_class() + "'.");
+		return nullptr;
 	}
 
 	Callable::CallError unchecked_error;
@@ -2379,7 +2162,6 @@ void CSharpScript::get_script_method_list(List<MethodInfo> *p_list) const {
 		for (const CSharpMethodInfo &E : top->methods) {
 			p_list->push_back(E.method_info);
 		}
-
 		top = top->base_script.ptr();
 	}
 }
@@ -2460,7 +2242,6 @@ Error CSharpScript::reload(bool p_keep_state) {
 	}
 
 	reload_invalidated = false;
-
 	String script_path = get_path();
 
 	valid = false;
@@ -2474,7 +2255,6 @@ Error CSharpScript::reload(bool p_keep_state) {
 #endif // DEBUG_ENABLED
 
 		update_script_class_info(this);
-
 		_update_exports();
 
 #ifdef TOOLS_ENABLED
@@ -2494,7 +2274,6 @@ ScriptLanguage *CSharpScript::get_language() const {
 
 bool CSharpScript::get_property_default_value(const StringName &p_property, Variant &r_value) const {
 #ifdef TOOLS_ENABLED
-
 	HashMap<StringName, Variant>::ConstIterator E = exported_members_defval_cache.find(p_property);
 	if (E) {
 		r_value = E->value;
@@ -2504,7 +2283,6 @@ bool CSharpScript::get_property_default_value(const StringName &p_property, Vari
 	if (base_script.is_valid()) {
 		return base_script->get_property_default_value(p_property, r_value);
 	}
-
 #endif
 	return false;
 }
@@ -2516,11 +2294,7 @@ void CSharpScript::update_exports() {
 }
 
 bool CSharpScript::has_script_signal(const StringName &p_signal) const {
-	if (!valid) {
-		return false;
-	}
-
-	if (!GDMonoCache::godot_api_cache_updated) {
+	if (!valid || !GDMonoCache::godot_api_cache_updated) {
 		return false;
 	}
 
@@ -2561,11 +2335,7 @@ void CSharpScript::get_script_signal_list(List<MethodInfo> *r_signals) const {
 
 bool CSharpScript::inherits_script(const Ref<Script> &p_script) const {
 	Ref<CSharpScript> cs = p_script;
-	if (cs.is_null()) {
-		return false;
-	}
-
-	if (!valid || !cs->valid) {
+	if (cs.is_null() || !valid || !cs->valid) {
 		return false;
 	}
 
@@ -2591,22 +2361,18 @@ void CSharpScript::get_script_property_list(List<PropertyInfo> *r_list) const {
 		for (const PropertyInfo &E : top->exported_members_cache) {
 			r_list->push_back(E);
 		}
-
 		top = top->base_script.ptr();
 	}
 #else
 	const CSharpScript *top = this;
 	while (top != nullptr) {
 		List<PropertyInfo> props;
-
 		for (const KeyValue<StringName, PropertyInfo> &E : top->member_info) {
 			props.push_front(E.value);
 		}
-
 		for (const PropertyInfo &prop : props) {
 			r_list->push_back(prop);
 		}
-
 		top = top->base_script.ptr();
 	}
 #endif
@@ -2622,11 +2388,9 @@ const Variant CSharpScript::get_rpc_config() const {
 
 Error CSharpScript::load_source_code(const String &p_path) {
 	Error ferr = read_all_file_utf8(p_path, source);
-
 	ERR_FAIL_COND_V_MSG(ferr != OK, ferr,
 			ferr == ERR_INVALID_DATA
-					? "Script '" + p_path + "' contains invalid unicode (UTF-8), so it was not loaded."
-											" Please ensure that scripts are saved in valid UTF-8 unicode."
+					? "Script '" + p_path + "' contains invalid unicode (UTF-8)."
 					: "Failed to read file: '" + p_path + "'.");
 
 #ifdef TOOLS_ENABLED
@@ -2644,7 +2408,6 @@ void CSharpScript::_clear() {
 
 CSharpScript::CSharpScript() {
 	_clear();
-
 #ifdef DEBUG_ENABLED
 	{
 		MutexLock lock(CSharpLanguage::get_singleton()->script_instances_mutex);
