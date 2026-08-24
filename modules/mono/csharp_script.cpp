@@ -97,11 +97,16 @@ void CSharpLanguage::init() {
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	if (da.is_valid()) {
-		da->make_dir_recursive(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Tools"));
-		da->make_dir_recursive(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Api"));
-		da->make_dir_recursive(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Mono"));
-		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Tools");
-		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Api");
+		String user_dir = OS::get_singleton()->get_user_data_dir();
+		da->make_dir_recursive(user_dir.path_join("GodotSharp/Tools"));
+		da->make_dir_recursive(user_dir.path_join("GodotSharp/Api"));
+		da->make_dir_recursive(user_dir.path_join("GodotSharp/Mono"));
+
+		if (da->dir_exists("/storage/emulated/0/GEngine")) {
+			da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Tools");
+			da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Api");
+			da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Mono");
+		}
 	}
 #endif
 
@@ -868,11 +873,10 @@ void CSharpLanguage::_editor_init_callback() {
 	const void **interop_funcs = godotsharp::get_editor_interop_funcs(interop_funcs_size);
 
 	Vector<String> possible_tools_paths;
-	possible_tools_paths.push_back(GodotSharpDirs::get_data_editor_tools_dir().path_join("GodotTools.dll"));
-	possible_tools_paths.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Tools/GodotTools.dll"));
 	possible_tools_paths.push_back("/storage/emulated/0/GEngine/GodotSharp/Tools/GodotTools.dll");
-	possible_tools_paths.push_back("res://.godot/mono/temp/bin/Debug/GodotTools.dll");
+	possible_tools_paths.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Tools/GodotTools.dll"));
 	possible_tools_paths.push_back("res://GodotSharp/Tools/GodotTools.dll");
+	possible_tools_paths.push_back(GodotSharpDirs::get_data_editor_tools_dir().path_join("GodotTools.dll"));
 
 	String tools_path = "";
 	for (int i = 0; i < possible_tools_paths.size(); i++) {
@@ -886,7 +890,7 @@ void CSharpLanguage::_editor_init_callback() {
 	if (tools_path.is_empty()) {
 		tools_path = GodotSharpDirs::get_data_editor_tools_dir().path_join("GodotTools.dll");
 		if (!FileAccess::exists(tools_path)) {
-			print_verbose(".NET/GEngine: GodotTools.dll not found. Standalone mode.");
+			print_verbose(".NET/GEngine: GodotTools.dll not found. Running in standalone mode.");
 			return;
 		}
 	}
