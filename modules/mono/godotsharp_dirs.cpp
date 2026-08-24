@@ -64,6 +64,13 @@ String _get_mono_user_dir() {
 		}
 #endif
 
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+		// Fallback sa Android external GEngine mono user folder kung available
+		if (DirAccess::exists("/storage/emulated/0/GEngine")) {
+			return "/storage/emulated/0/GEngine/mono";
+		}
+#endif
+
 		return settings_path.path_join("mono");
 	}
 #else
@@ -114,11 +121,17 @@ public:
 
 private:
 	void _ensure_directory_exists(const String &p_dir) {
+		if (p_dir.is_empty()) {
+			return;
+		}
+
+		String global_dir = p_dir;
 		if (ProjectSettings::get_singleton()) {
-			String global_dir = ProjectSettings::get_singleton()->globalize_path(p_dir);
-			if (!DirAccess::exists(global_dir)) {
-				DirAccess::make_dir_recursive_absolute(global_dir);
-			}
+			global_dir = ProjectSettings::get_singleton()->globalize_path(p_dir);
+		}
+
+		if (!DirAccess::exists(global_dir)) {
+			DirAccess::make_dir_recursive_absolute(global_dir);
 		}
 	}
 
@@ -134,9 +147,7 @@ private:
 		mono_user_dir = "user://";
 #else
 		mono_user_dir = _get_mono_user_dir();
-		if (!DirAccess::exists(mono_user_dir)) {
-			DirAccess::make_dir_recursive_absolute(mono_user_dir);
-		}
+		_ensure_directory_exists(mono_user_dir);
 #endif
 
 		String exe_dir = OS::get_singleton()->get_executable_path().get_base_dir();
@@ -149,21 +160,37 @@ private:
 		data_editor_tools_dir = data_dir_root.path_join("Tools");
 		String api_assemblies_base_dir = data_dir_root.path_join("Api");
 		build_logs_dir = mono_user_dir.path_join("build_logs");
+		_ensure_directory_exists(build_logs_dir);
 
-#ifdef ANDROID_ENABLED
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 		Vector<String> probe_roots;
-		probe_roots.push_back("res://GodotSharp");
 		probe_roots.push_back("/storage/emulated/0/GEngine/GodotSharp");
+		probe_roots.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp"));
+		probe_roots.push_back("res://GodotSharp");
 		probe_roots.push_back("/storage/emulated/0/Android/data/org.godotengine.editor.v4/files/GodotSharp");
 		probe_roots.push_back("/storage/emulated/0/libs/GodotSharp");
 
-		for (const String &candidate : probe_roots) {
-			if (DirAccess::exists(candidate)) {
-				data_dir_root = candidate;
+		bool found_root = false;
+		for (int i = 0; i < probe_roots.size(); i++) {
+			String candidate = probe_roots[i];
+			String global_candidate = ProjectSettings::get_singleton() ? ProjectSettings::get_singleton()->globalize_path(candidate) : candidate;
+
+			if (DirAccess::exists(global_candidate)) {
+				data_dir_root = global_candidate;
 				data_editor_tools_dir = data_dir_root.path_join("Tools");
 				api_assemblies_base_dir = data_dir_root.path_join("Api");
+				found_root = true;
 				break;
 			}
+		}
+
+		if (!found_root) {
+			// Fallback: Default to /storage/emulated/0/GEngine/GodotSharp and auto-create
+			data_dir_root = "/storage/emulated/0/GEngine/GodotSharp";
+			data_editor_tools_dir = data_dir_root.path_join("Tools");
+			api_assemblies_base_dir = data_dir_root.path_join("Api");
+			_ensure_directory_exists(data_editor_tools_dir);
+			_ensure_directory_exists(api_assemblies_base_dir);
 		}
 #elif defined(MACOS_ENABLED)
 		if (!DirAccess::exists(data_editor_tools_dir)) {
@@ -184,7 +211,7 @@ private:
 		String arch = Engine::get_singleton()->get_architecture_name();
 		String appname_safe = Path::get_csharp_project_name();
 		String packed_path = "res://.godot/mono/publish/" + arch;
-#ifdef ANDROID_ENABLED
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 		api_assemblies_dir = packed_path;
 #else
 		if (DirAccess::exists(packed_path)) {
@@ -281,4 +308,3 @@ String get_data_editor_tools_dir() {
 #endif
 
 } // namespace GodotSharpDirs
-
