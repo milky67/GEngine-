@@ -99,6 +99,7 @@ void CSharpLanguage::init() {
 	if (da.is_valid()) {
 		da->make_dir_recursive(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Tools"));
 		da->make_dir_recursive(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Api"));
+		da->make_dir_recursive(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Mono"));
 		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Tools");
 		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Api");
 	}
@@ -106,6 +107,10 @@ void CSharpLanguage::init() {
 
 #ifdef TOOLS_ENABLED
 	EditorNode::add_init_callback(&_editor_init_callback);
+#endif
+
+#ifdef GD_MONO_HOT_RELOAD
+	managed_callable_middleman = memnew(ManagedCallableMiddleman);
 #endif
 
 	gdmono = memnew(GDMono);
@@ -140,7 +145,9 @@ void CSharpLanguage::finalize() {
 			script_binding.inited = false;
 		}
 
-		script_binding.owner->free_instance_binding(this);
+		if (script_binding.owner) {
+			script_binding.owner->free_instance_binding(this);
+		}
 	}
 
 	if (gdmono) {
@@ -163,7 +170,12 @@ void CSharpLanguage::finalize() {
 	}
 #endif
 
-	memdelete(managed_callable_middleman);
+#ifdef GD_MONO_HOT_RELOAD
+	if (managed_callable_middleman) {
+		memdelete(managed_callable_middleman);
+		managed_callable_middleman = nullptr;
+	}
+#endif
 
 	finalizing = false;
 	finalized = true;
@@ -1503,14 +1515,18 @@ bool CSharpInstance::_internal_new_managed() {
 
 	if (!ok) {
 		script = Ref<CSharpScript>();
-		owner->set_script_instance(nullptr);
+		if (owner) {
+			owner->set_script_instance(nullptr);
+		}
 		owner = nullptr;
 		return false;
 	}
 
 	if (gchandle.is_released()) {
 		script = Ref<CSharpScript>();
-		owner->set_script_instance(nullptr);
+		if (owner) {
+			owner->set_script_instance(nullptr);
+		}
 		owner = nullptr;
 		return false;
 	}
@@ -2070,7 +2086,9 @@ CSharpInstance *CSharpScript::_create_instance(const Variant **p_args, int p_arg
 
 	if (!ok) {
 		instance->script = Ref<CSharpScript>();
-		p_owner->set_script_instance(nullptr);
+		if (p_owner) {
+			p_owner->set_script_instance(nullptr);
+		}
 		instance->owner = nullptr;
 		memdelete(instance);
 		return nullptr;
@@ -2078,7 +2096,9 @@ CSharpInstance *CSharpScript::_create_instance(const Variant **p_args, int p_arg
 
 	if (instance->gchandle.is_released()) {
 		instance->script = Ref<CSharpScript>();
-		p_owner->set_script_instance(nullptr);
+		if (p_owner) {
+			p_owner->set_script_instance(nullptr);
+		}
 		instance->owner = nullptr;
 		memdelete(instance);
 		return nullptr;
