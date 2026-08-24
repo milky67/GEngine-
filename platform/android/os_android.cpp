@@ -67,18 +67,19 @@
 const char *OS_Android::ANDROID_EXEC_PATH = "apk";
 
 String _remove_symlink(const String &dir) {
-	// Workaround for Android 6.0+ using a symlink.
-	// Save the current directory.
 	char current_dir_name[2048];
-	getcwd(current_dir_name, 2048);
-	// Change directory to the external data directory.
-	chdir(dir.utf8().get_data());
-	// Get the actual directory without the potential symlink.
+	if (getcwd(current_dir_name, 2048) == nullptr) {
+		return dir;
+	}
+	if (chdir(dir.utf8().get_data()) != 0) {
+		return dir;
+	}
 	char dir_name_without_symlink[2048];
-	getcwd(dir_name_without_symlink, 2048);
-	// Convert back to a String.
+	if (getcwd(dir_name_without_symlink, 2048) == nullptr) {
+		chdir(current_dir_name);
+		return dir;
+	}
 	String dir_without_symlink(dir_name_without_symlink);
-	// Restore original current directory.
 	chdir(current_dir_name);
 	return dir_without_symlink;
 }
@@ -142,10 +143,10 @@ void OS_Android::initialize() {
 }
 
 void OS_Android::initialize_joypads() {
-	Input::get_singleton()->set_fallback_mapping(godot_java->get_input_fallback_mapping());
-
-	// This queries/updates the currently connected devices/joypads.
-	godot_java->init_input_devices();
+	if (godot_java) {
+		Input::get_singleton()->set_fallback_mapping(godot_java->get_input_fallback_mapping());
+		godot_java->init_input_devices();
+	}
 }
 
 void OS_Android::set_main_loop(MainLoop *p_main_loop) {
@@ -175,14 +176,17 @@ GodotIOJavaWrapper *OS_Android::get_godot_io_java() {
 }
 
 bool OS_Android::request_permission(const String &p_name) {
+	if (!godot_java) return false;
 	return godot_java->request_permission(p_name);
 }
 
 bool OS_Android::request_permissions() {
+	if (!godot_java) return false;
 	return godot_java->request_permissions();
 }
 
 Vector<String> OS_Android::get_granted_permissions() const {
+	if (!godot_java) return Vector<String>();
 	return godot_java->get_granted_permissions();
 }
 
@@ -191,7 +195,7 @@ bool OS_Android::copy_dynamic_library(const String &p_library_path, const String
 		return false;
 	}
 
-	Ref<DirAccess> da_ref = DirAccess::create_for_path(p_library_path);
+	Ref<DirAccess> da_ref = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	if (da_ref.is_null()) {
 		return false;
 	}
@@ -199,13 +203,9 @@ bool OS_Android::copy_dynamic_library(const String &p_library_path, const String
 	String copy_path = p_target_dir.path_join(p_library_path.get_file());
 	bool copy_exists = FileAccess::exists(copy_path);
 	if (copy_exists) {
-		print_verbose("Deleting existing library copy " + copy_path);
-		if (da_ref->remove(copy_path) != OK) {
-			print_verbose("Unable to delete " + copy_path);
-		}
+		da_ref->remove(copy_path);
 	}
 
-	print_verbose("Copying " + p_library_path + " to " + p_target_dir);
 	Error create_dir_result = da_ref->make_dir_recursive(p_target_dir);
 	if (create_dir_result == OK || create_dir_result == ERR_ALREADY_EXISTS) {
 		copy_exists = da_ref->copy(p_library_path, copy_path) == OK;
@@ -228,13 +228,9 @@ Error OS_Android::open_dynamic_library(const String &p_path, void *&p_library_ha
 
 	p_library_handle = dlopen(path.utf8().get_data(), RTLD_NOW);
 	if (!p_library_handle && so_file_exists) {
-		// The library (and its dependencies) may be on the sdcard and thus inaccessible.
-		// Try to copy to the internal directory for access.
 		const String dynamic_library_path = get_dynamic_libraries_path();
 
 		if (p_data != nullptr && p_data->library_dependencies != nullptr && !p_data->library_dependencies->is_empty()) {
-			// Copy the library dependencies
-			print_verbose("Copying library dependencies..");
 			for (const String &library_dependency_path : *p_data->library_dependencies) {
 				String internal_library_dependency_path;
 				if (!copy_dynamic_library(library_dependency_path, dynamic_library_path.path_join(library_dependency_path.get_base_dir()), &internal_library_dependency_path)) {
@@ -249,11 +245,9 @@ Error OS_Android::open_dynamic_library(const String &p_path, void *&p_library_ha
 		}
 
 		String internal_path;
-		print_verbose("Copying library " + p_path);
 		const bool internal_so_file_exists = copy_dynamic_library(p_path, dynamic_library_path.path_join(p_path.get_base_dir()), &internal_path);
 
 		if (internal_so_file_exists) {
-			print_verbose("Opening library " + internal_path);
 			p_library_handle = dlopen(internal_path.utf8().get_data(), RTLD_NOW);
 			if (p_library_handle) {
 				path = internal_path;
@@ -286,7 +280,7 @@ String OS_Android::get_system_property(const char *key) const {
 String OS_Android::get_distribution_name() const {
 	if (!get_system_property("ro.havoc.version").is_empty()) {
 		return "Havoc OS";
-	} else if (!get_system_property("org.pex.version").is_empty()) { // Putting before "Pixel Experience", because it's derivating from it.
+	} else if (!get_system_property("org.pex.version").is_empty()) {
 		return "Pixel Extended";
 	} else if (!get_system_property("org.pixelexperience.version").is_empty()) {
 		return "Pixel Experience";
@@ -306,15 +300,14 @@ String OS_Android::get_distribution_name() const {
 		return "Syberia Project";
 	} else if (!get_system_property("ro.arrow.version").is_empty()) {
 		return "ArrowOS";
-	} else if (!get_system_property("ro.lineage.version").is_empty()) { // Putting LineageOS last, just in case any derivative writes to "ro.lineage.version".
+	} else if (!get_system_property("ro.lineage.version").is_empty()) {
 		return "LineageOS";
 	}
 
-	if (!get_system_property("ro.modversion").is_empty()) { // Handles other Android custom ROMs.
+	if (!get_system_property("ro.modversion").is_empty()) {
 		return vformat("%s %s", get_name(), "Custom ROM");
 	}
 
-	// Handles stock Android.
 	return get_name();
 }
 
@@ -329,12 +322,11 @@ String OS_Android::get_version() const {
 		}
 	}
 
-	String mod_version = get_system_property("ro.modversion"); // Handles other Android custom ROMs.
+	String mod_version = get_system_property("ro.modversion");
 	if (!mod_version.is_empty()) {
 		return mod_version;
 	}
 
-	// Handles stock Android.
 	String sdk_version = get_system_property("ro.build.version.sdk");
 	String build = get_system_property("ro.build.version.incremental");
 	if (!sdk_version.is_empty()) {
@@ -449,7 +441,6 @@ void OS_Android::main_loop_focusout() {
 	}
 
 	if (dsa) {
-		// Only pause when we are not in PiP mode.
 		audio_driver_android.set_pause(!dsa->is_in_pip_mode());
 	}
 }
@@ -466,6 +457,7 @@ void OS_Android::main_loop_focusin() {
 }
 
 Error OS_Android::shell_open(const String &p_uri) {
+	if (!godot_io_java) return FAILED;
 	return godot_io_java->open_uri(p_uri);
 }
 
@@ -474,7 +466,7 @@ String OS_Android::get_resource_dir() const {
 	return OS_Unix::get_resource_dir();
 #else
 	if (remote_fs_dir.is_empty()) {
-		return "/"; // Android has its own filesystem for resources inside the APK
+		return "/";
 	} else {
 		return remote_fs_dir;
 	}
@@ -482,20 +474,22 @@ String OS_Android::get_resource_dir() const {
 }
 
 String OS_Android::get_locale() const {
-	String locale = godot_io_java->get_locale();
-	if (!locale.is_empty()) {
-		return locale;
+	if (godot_io_java) {
+		String locale = godot_io_java->get_locale();
+		if (!locale.is_empty()) {
+			return locale;
+		}
 	}
-
 	return OS_Unix::get_locale();
 }
 
 String OS_Android::get_model_name() const {
-	String model = godot_io_java->get_model();
-	if (!model.is_empty()) {
-		return model;
+	if (godot_io_java) {
+		String model = godot_io_java->get_model();
+		if (!model.is_empty()) {
+			return model;
+		}
 	}
-
 	return OS_Unix::get_model_name();
 }
 
@@ -504,7 +498,7 @@ String OS_Android::get_processor_name() const {
 }
 
 String OS_Android::get_data_path() const {
-	return OS::get_user_data_dir();
+	return "/storage/emulated/0/GEngine";
 }
 
 void OS_Android::_load_system_font_config() const {
@@ -546,7 +540,6 @@ void OS_Android::_load_system_font_config() const {
 					for (int i = 0; i < lang_codes.size(); i++) {
 						Vector<String> lang_code_elements = lang_codes[i].split("-");
 						if (lang_code_elements.size() >= 1 && lang_code_elements[0] != "und") {
-							// Add missing script codes.
 							if (lang_code_elements[0] == "ko") {
 								fi.script.insert("Hani");
 								fi.script.insert("Hang");
@@ -561,7 +554,6 @@ void OS_Android::_load_system_font_config() const {
 							}
 						}
 						if (lang_code_elements.size() >= 2) {
-							// Add common codes for variants and remove variants not supported by HarfBuzz/ICU.
 							if (lang_code_elements[1] == "Aran") {
 								fi.script.insert("Arab");
 							}
@@ -691,7 +683,7 @@ Vector<String> OS_Android::get_system_font_path_for_text(const String &p_font_na
 			}
 		}
 		if (score >= 490) {
-			break; // Perfect match.
+			break;
 		}
 	}
 
@@ -726,7 +718,7 @@ String OS_Android::get_system_font_path(const String &p_font_name, int p_weight,
 			best_match = E;
 		}
 		if (score >= 140) {
-			break; // Perfect match.
+			break;
 		}
 	}
 	if (best_match) {
@@ -736,10 +728,6 @@ String OS_Android::get_system_font_path(const String &p_font_name, int p_weight,
 }
 
 String OS_Android::get_executable_path() const {
-	// Since unix process creation is restricted on Android, we bypass
-	// OS_Unix::get_executable_path() so we can return ANDROID_EXEC_PATH.
-	// Detection of ANDROID_EXEC_PATH allows to handle process creation in an Android compliant
-	// manner.
 	return OS::get_executable_path();
 }
 
@@ -748,12 +736,14 @@ String OS_Android::get_user_data_dir(const String &p_user_dir) const {
 		return data_dir_cache;
 	}
 
-	String data_dir = godot_io_java->get_user_data_dir(p_user_dir);
-	if (!data_dir.is_empty()) {
-		data_dir_cache = _remove_symlink(data_dir);
-		return data_dir_cache;
+	if (godot_io_java) {
+		String data_dir = godot_io_java->get_user_data_dir(p_user_dir);
+		if (!data_dir.is_empty()) {
+			data_dir_cache = _remove_symlink(data_dir);
+			return data_dir_cache;
+		}
 	}
-	return ".";
+	return "/storage/emulated/0/GEngine";
 }
 
 String OS_Android::get_dynamic_libraries_path() const {
@@ -765,12 +755,14 @@ String OS_Android::get_cache_path() const {
 		return cache_dir_cache;
 	}
 
-	String cache_dir = godot_io_java->get_cache_dir();
-	if (!cache_dir.is_empty()) {
-		cache_dir_cache = _remove_symlink(cache_dir);
-		return cache_dir_cache;
+	if (godot_io_java) {
+		String cache_dir = godot_io_java->get_cache_dir();
+		if (!cache_dir.is_empty()) {
+			cache_dir_cache = _remove_symlink(cache_dir);
+			return cache_dir_cache;
+		}
 	}
-	return ".";
+	return "/storage/emulated/0/GEngine/cache";
 }
 
 String OS_Android::get_temp_path() const {
@@ -778,25 +770,31 @@ String OS_Android::get_temp_path() const {
 		return temp_dir_cache;
 	}
 
-	String temp_dir = godot_io_java->get_temp_dir();
-	if (!temp_dir.is_empty()) {
-		temp_dir_cache = _remove_symlink(temp_dir);
-		return temp_dir_cache;
+	if (godot_io_java) {
+		String temp_dir = godot_io_java->get_temp_dir();
+		if (!temp_dir.is_empty()) {
+			temp_dir_cache = _remove_symlink(temp_dir);
+			return temp_dir_cache;
+		}
 	}
-	return ".";
+	return "/storage/emulated/0/GEngine";
 }
 
 String OS_Android::get_unique_id() const {
-	String unique_id = godot_io_java->get_unique_id();
-	if (!unique_id.is_empty()) {
-		return unique_id;
+	if (godot_io_java) {
+		String unique_id = godot_io_java->get_unique_id();
+		if (!unique_id.is_empty()) {
+			return unique_id;
+		}
 	}
-
 	return OS::get_unique_id();
 }
 
 String OS_Android::get_system_dir(SystemDir p_dir, bool p_shared_storage) const {
-	return godot_io_java->get_system_dir(p_dir, p_shared_storage);
+	if (godot_io_java) {
+		return godot_io_java->get_system_dir(p_dir, p_shared_storage);
+	}
+	return "/storage/emulated/0/GEngine";
 }
 
 Error OS_Android::move_to_trash(const String &p_path) {
@@ -805,15 +803,11 @@ Error OS_Android::move_to_trash(const String &p_path) {
 		return FAILED;
 	}
 
-	// Check if it's a directory
 	if (da_ref->dir_exists(p_path)) {
 		RETURN_IF_ERROR(da_ref->change_dir(p_path));
-		// This is directory, let's erase its contents
 		RETURN_IF_ERROR(da_ref->erase_contents_recursive());
-		// Remove the top directory
 		return da_ref->remove(p_path);
 	} else if (da_ref->file_exists(p_path)) {
-		// This is a file, let's remove it.
 		return da_ref->remove(p_path);
 	} else {
 		return FAILED;
@@ -850,22 +844,28 @@ ANativeWindow *OS_Android::get_native_window() const {
 }
 
 void OS_Android::vibrate_handheld(int p_duration_ms, float p_amplitude) {
-	godot_java->vibrate(p_duration_ms, p_amplitude);
+	if (godot_java) {
+		godot_java->vibrate(p_duration_ms, p_amplitude);
+	}
 }
 
 String OS_Android::get_config_path() const {
-	return OS::get_user_data_dir().path_join("config");
+	return "/storage/emulated/0/GEngine/config";
 }
 
 void OS_Android::benchmark_begin_measure(const String &p_context, const String &p_what) {
 #ifdef TOOLS_ENABLED
-	godot_java->begin_benchmark_measure(p_context, p_what);
+	if (godot_java) {
+		godot_java->begin_benchmark_measure(p_context, p_what);
+	}
 #endif
 }
 
 void OS_Android::benchmark_end_measure(const String &p_context, const String &p_what) {
 #ifdef TOOLS_ENABLED
-	godot_java->end_benchmark_measure(p_context, p_what);
+	if (godot_java) {
+		godot_java->end_benchmark_measure(p_context, p_what);
+	}
 #endif
 }
 
@@ -874,16 +874,20 @@ void OS_Android::benchmark_dump() {
 	if (!is_use_benchmark_set()) {
 		return;
 	}
-	godot_java->dump_benchmark(get_benchmark_file());
+	if (godot_java) {
+		godot_java->dump_benchmark(get_benchmark_file());
+	}
 #endif
 }
 
 #ifdef TOOLS_ENABLED
 Error OS_Android::sign_apk(const String &p_input_path, const String &p_output_path, const String &p_keystore_path, const String &p_keystore_user, const String &p_keystore_password) {
+	if (!godot_java) return FAILED;
 	return godot_java->sign_apk(p_input_path, p_output_path, p_keystore_path, p_keystore_user, p_keystore_password);
 }
 
 Error OS_Android::verify_apk(const String &p_apk_path) {
+	if (!godot_java) return FAILED;
 	return godot_java->verify_apk(p_apk_path);
 }
 #endif
@@ -896,7 +900,7 @@ bool OS_Android::_check_internal_feature_support(const String &p_feature) {
 	if (p_feature == "system_fonts") {
 		return true;
 	}
-	if (p_feature == "mobile") {
+	if (p_feature == "mobile" || p_feature == "dotnet") {
 		return true;
 	}
 #if defined(__aarch64__)
@@ -913,7 +917,7 @@ bool OS_Android::_check_internal_feature_support(const String &p_feature) {
 	}
 #endif
 
-	if (godot_java->check_internal_feature_support(p_feature)) {
+	if (godot_java && godot_java->check_internal_feature_support(p_feature)) {
 		return true;
 	}
 
@@ -965,6 +969,9 @@ Error OS_Android::create_process(const String &p_path, const List<String> &p_arg
 }
 
 Error OS_Android::create_instance(const List<String> &p_arguments, ProcessID *r_child_id) {
+	if (!godot_java) {
+		return FAILED;
+	}
 	int instance_id = godot_java->create_new_godot_instance(p_arguments);
 	if (instance_id == -1) {
 		return FAILED;
@@ -976,14 +983,17 @@ Error OS_Android::create_instance(const List<String> &p_arguments, ProcessID *r_
 }
 
 Error OS_Android::kill(const ProcessID &p_pid) {
-	if (godot_java->force_quit(nullptr, p_pid)) {
+	if (godot_java && godot_java->force_quit(nullptr, p_pid)) {
 		return OK;
 	}
 	return OS_Unix::kill(p_pid);
 }
 
 String OS_Android::get_system_ca_certificates() {
-	return godot_java->get_ca_certificates();
+	if (godot_java) {
+		return godot_java->get_ca_certificates();
+	}
+	return "";
 }
 
 Error OS_Android::get_entropy(uint8_t *r_buffer, int p_bytes) {
@@ -1002,6 +1012,7 @@ Error OS_Android::setup_remote_filesystem(const String &p_server_host, int p_por
 }
 
 void OS_Android::load_platform_gdextensions() const {
+	if (!godot_java) return;
 	Vector<String> extension_list_config_file = godot_java->get_gdextension_list_config_file();
 	for (String config_file_path : extension_list_config_file) {
 		GDExtensionManager::LoadStatus err = GDExtensionManager::get_singleton()->load_extension(config_file_path);
