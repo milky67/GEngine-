@@ -955,7 +955,7 @@ bool CSharpLanguage::setup_csharp_script_binding(CSharpScriptBinding &r_script_b
 	StringName type_name = p_object->get_class_name();
 	const ClassDB::ClassInfo *classinfo = ClassDB::classes.getptr(type_name);
 
-	while (classinfo && (!classinfo->exposed || classinfo->gdextension || ignoredtypes_has_type(classinfo->gdtype->get_name()))) {
+	while (classinfo && (!classinfo->exposed || classinfo->gdextension || ignored_types.has(classinfo->gdtype->get_name()))) {
 		classinfo = classinfo->inherits_ptr;
 	}
 
