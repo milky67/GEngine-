@@ -79,11 +79,19 @@ void CSharpLanguage::init() {
 		return;
 	}
 #endif
+
 #ifdef DEBUG_ENABLED
 	if (OS::get_singleton()->get_cmdline_args().find("--class-db-json")) {
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+		class_db_api_to_json("/storage/emulated/0/GEngine/class_db_api.json", ClassDB::API_CORE);
+#ifdef TOOLS_ENABLED
+		class_db_api_to_json("/storage/emulated/0/GEngine/class_db_api_editor.json", ClassDB::API_EDITOR);
+#endif
+#else
 		class_db_api_to_json("user://class_db_api.json", ClassDB::API_CORE);
 #ifdef TOOLS_ENABLED
 		class_db_api_to_json("user://class_db_api_editor.json", ClassDB::API_EDITOR);
+#endif
 #endif
 	}
 #endif
@@ -97,16 +105,13 @@ void CSharpLanguage::init() {
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	if (da.is_valid()) {
-		String user_dir = OS::get_singleton()->get_user_data_dir();
-		da->make_dir_recursive(user_dir.path_join("GodotSharp/Tools"));
-		da->make_dir_recursive(user_dir.path_join("GodotSharp/Api"));
-		da->make_dir_recursive(user_dir.path_join("GodotSharp/Mono"));
-
-		if (da->dir_exists("/storage/emulated/0/GEngine")) {
-			da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Tools");
-			da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Api");
-			da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Mono");
-		}
+		da->make_dir_recursive("/storage/emulated/0/GEngine");
+		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Tools");
+		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Api");
+		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Mono");
+		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp_Extracted");
+		da->make_dir_recursive("/storage/emulated/0/GEngine/dotnet");
+		da->make_dir_recursive("/storage/emulated/0/GEngine/Projects");
 	}
 #endif
 
@@ -874,13 +879,13 @@ void CSharpLanguage::_editor_init_callback() {
 
 	Vector<String> possible_tools_paths;
 	possible_tools_paths.push_back("/storage/emulated/0/GEngine/GodotSharp/Tools/GodotTools.dll");
-	possible_tools_paths.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Tools/GodotTools.dll"));
-	possible_tools_paths.push_back("res://GodotSharp/Tools/GodotTools.dll");
+	possible_tools_paths.push_back("/storage/emulated/0/GEngine/GodotSharp_Extracted/GodotTools.dll");
 	possible_tools_paths.push_back(GodotSharpDirs::get_data_editor_tools_dir().path_join("GodotTools.dll"));
+	possible_tools_paths.push_back("res://GodotSharp/Tools/GodotTools.dll");
 
 	String tools_path = "";
 	for (int i = 0; i < possible_tools_paths.size(); i++) {
-		String p = ProjectSettings::get_singleton()->globalize_path(possible_tools_paths[i]);
+		String p = ProjectSettings::get_singleton() ? ProjectSettings::get_singleton()->globalize_path(possible_tools_paths[i]) : possible_tools_paths[i];
 		if (FileAccess::exists(p)) {
 			tools_path = p;
 			break;
