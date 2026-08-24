@@ -14,10 +14,17 @@ Mutex ManagedCallable::instances_mutex;
 #endif
 
 bool ManagedCallable::compare_equal(const CallableCustom *p_a, const CallableCustom *p_b) {
+	if (p_a == p_b) {
+		return true;
+	}
+	if (!p_a || !p_b) {
+		return false;
+	}
+
 	const ManagedCallable *a = static_cast<const ManagedCallable *>(p_a);
 	const ManagedCallable *b = static_cast<const ManagedCallable *>(p_b);
 
-	if (a->delegate_handle.value == b->delegate_handle.value) {
+	if (a->delegate_handle.value == b->delegate_handle.value && a->trampoline == b->trampoline && a->object_id == b->object_id) {
 		return true;
 	}
 	if (!a->delegate_handle.value || !b->delegate_handle.value) {
@@ -33,6 +40,9 @@ bool ManagedCallable::compare_equal(const CallableCustom *p_a, const CallableCus
 }
 
 bool ManagedCallable::compare_less(const CallableCustom *p_a, const CallableCustom *p_b) {
+	if (!p_a || !p_b) {
+		return p_a < p_b;
+	}
 	if (compare_equal(p_a, p_b)) {
 		return false;
 	}
@@ -40,7 +50,11 @@ bool ManagedCallable::compare_less(const CallableCustom *p_a, const CallableCust
 }
 
 uint32_t ManagedCallable::hash() const {
-	if (!GDMonoCache::godot_api_cache_updated || GDMonoCache::managed_callbacks.DelegateUtils_DelegateHash == nullptr || delegate_handle.value == nullptr) {
+	if (delegate_handle.value == nullptr) {
+		return 0;
+	}
+
+	if (!GDMonoCache::godot_api_cache_updated || GDMonoCache::managed_callbacks.DelegateUtils_DelegateHash == nullptr) {
 		return (uint32_t)(uint64_t)delegate_handle.value;
 	}
 	return GDMonoCache::managed_callbacks.DelegateUtils_DelegateHash(delegate_handle);
