@@ -94,15 +94,13 @@ void CSharpLanguage::init() {
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "dotnet/project/assembly_reload_attempts", PROPERTY_HINT_RANGE, "1,16,1,or_greater"), 3);
 #endif
 
-#if defined(__ANDROID__) || defined(ANDROID_ENABLED)
-	// Ihanda ang standard GEngine runtime directories sa Android storage
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	if (da.is_valid()) {
-		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Tools");
-		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Api");
-		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Mono");
 		da->make_dir_recursive(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Tools"));
 		da->make_dir_recursive(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Api"));
+		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Tools");
+		da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Api");
 	}
 #endif
 
@@ -857,7 +855,6 @@ void CSharpLanguage::_editor_init_callback() {
 	int32_t interop_funcs_size = 0;
 	const void **interop_funcs = godotsharp::get_editor_interop_funcs(interop_funcs_size);
 
-	// Multi-path search priority para sa GodotTools.dll
 	Vector<String> possible_tools_paths;
 	possible_tools_paths.push_back(GodotSharpDirs::get_data_editor_tools_dir().path_join("GodotTools.dll"));
 	possible_tools_paths.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Tools/GodotTools.dll"));
@@ -877,7 +874,7 @@ void CSharpLanguage::_editor_init_callback() {
 	if (tools_path.is_empty()) {
 		tools_path = GodotSharpDirs::get_data_editor_tools_dir().path_join("GodotTools.dll");
 		if (!FileAccess::exists(tools_path)) {
-			print_verbose(".NET/GEngine: GodotTools.dll not found. Operating in standalone mode.");
+			print_verbose(".NET/GEngine: GodotTools.dll not found. Standalone mode.");
 			return;
 		}
 	}
@@ -1506,6 +1503,7 @@ bool CSharpInstance::_internal_new_managed() {
 
 	if (!ok) {
 		script = Ref<CSharpScript>();
+		p_owner->set_script_instance(nullptr);
 		owner = nullptr;
 		return false;
 	}
@@ -1709,7 +1707,7 @@ CSharpInstance::~CSharpInstance() {
 	disconnect_event_signals();
 
 	if (!gchandle.is_released()) {
-		if (!predelete_notified && !ref_dying) {
+		if (!predelete_notified && !ref_dying && GDMono::get_singleton() && GDMono::get_singleton()->is_runtime_initialized()) {
 			if (GDMonoCache::godot_api_cache_updated && GDMonoCache::managed_callbacks.CSharpInstanceBridge_CallDispose != nullptr) {
 				GDMonoCache::managed_callbacks.CSharpInstanceBridge_CallDispose(
 						gchandle.get_intptr(), true);
