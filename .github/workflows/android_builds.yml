@@ -44,7 +44,7 @@ jobs:
         run: |
           python ./misc/scripts/install_swappy_android.py
 
-      # 1. DOWNLOAD LAHAT NG OFFICIAL MICROSOFT .NET 8 ANDROID ARM64 RUNTIME PACKS (hostfxr, hostpolicy, monosgen, bcl)
+      # 1. DOWNLOAD AT EXTRACT NG LAHAT NG OFFICIAL MICROSOFT ANDROID RUNTIME PACKS
       - name: Download All Android Native .so Libraries (libhostfxr, libmonosgen, libcoreclr, etc.)
         shell: bash
         run: |
