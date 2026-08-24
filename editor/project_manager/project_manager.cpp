@@ -1,32 +1,6 @@
 /**************************************************************************/
 /*  project_manager.cpp                                                   */
 /**************************************************************************/
-/*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
-/*                        https://godotengine.org                         */
-/**************************************************************************/
-/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
-/*                                                                        */
-/* Permission is hereby granted, free of charge, to any person obtaining  */
-/* a copy of this software and associated documentation files (the        */
-/* "Software"), to deal in the Software without restriction, including    */
-/* without limitation the rights to use, copy, modify, merge, publish,    */
-/* distribute, sublicense, and/or sell copies of the Software, and to     */
-/* permit persons to whom the Software is furnished to do so, subject to  */
-/* the following conditions:                                              */
-/*                                                                        */
-/* The above copyright notice and this permission notice shall be         */
-/* included in all copies or substantial portions of the Software.        */
-/*                                                                        */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
-/**************************************************************************/
 
 #include "project_manager.h"
 
@@ -74,19 +48,17 @@
 
 #ifndef PHYSICS_2D_DISABLED
 #include "servers/physics_2d/physics_server_2d.h"
-#endif // PHYSICS_2D_DISABLED
+#endif
 
 #ifndef PHYSICS_3D_DISABLED
 #include "servers/physics_3d/physics_server_3d.h"
-#endif // PHYSICS_3D_DISABLED
+#endif
 
-#include "modules/modules_enabled.gen.h" // For gdscript, mono. (For editor help highlighter).
+#include "modules/modules_enabled.gen.h"
 
 constexpr int GODOT4_CONFIG_VERSION = 5;
 
 ProjectManager *ProjectManager::singleton = nullptr;
-
-// Notifications.
 
 void ProjectManager::_notification(int p_what) {
 	switch (p_what) {
@@ -95,11 +67,9 @@ void ProjectManager::_notification(int p_what) {
 
 			Window *main_window = get_window();
 			if (main_window) {
-				// Handle macOS fullscreen and extend-to-title changes.
 				main_window->connect("titlebar_changed", callable_mp(this, &ProjectManager::_titlebar_resized));
 			}
 
-			// Theme has already been created in the constructor, so we can skip that step.
 			_update_theme(true);
 		} break;
 
@@ -116,7 +86,6 @@ void ProjectManager::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_TRANSLATION_CHANGED: {
-			// TRANSLATORS: This refers to the application where users manage their Godot projects.
 			SceneTree::get_singleton()->get_root()->set_title(GODOT_VERSION_NAME + String(" - ") + TTR("Project Manager", "Application"));
 
 			const String line1 = TTR("You don't have any projects yet.");
@@ -153,13 +122,10 @@ void ProjectManager::_notification(int p_what) {
 	}
 }
 
-// Utility data.
-
 Ref<Texture2D> ProjectManager::_file_dialog_get_icon(const String &p_path) {
 	if (p_path.has_extension("godot")) {
 		return singleton->icon_type_cache["GodotMonochrome"];
 	}
-
 	return singleton->icon_type_cache["Object"];
 }
 
@@ -167,7 +133,6 @@ Ref<Texture2D> ProjectManager::_file_dialog_get_thumbnail(const String &p_path) 
 	if (p_path.has_extension("godot")) {
 		return singleton->icon_type_cache["GodotFile"];
 	}
-
 	return Ref<Texture2D>();
 }
 
@@ -182,15 +147,11 @@ void ProjectManager::_build_icon_type_cache(Ref<Theme> p_theme) {
 	}
 }
 
-// Main layout.
-
-// Hides certain parts of the Project Manager when window width gets smaller than combined_minimum_size.
 void ProjectManager::_update_compact_mode(bool p_reset_threshold) {
 	if (p_reset_threshold) {
 		project_list_sidebar->show();
 		compact_mode_threshold = root_container->get_combined_minimum_size().width;
 	}
-
 	bool compact_mode = get_size().width < compact_mode_threshold;
 	project_list_sidebar->set_visible(!compact_mode);
 }
@@ -201,10 +162,8 @@ void ProjectManager::_update_size_limits() {
 	const real_t smallest_display_dimension = display_size.width < display_size.height ? display_size.width : display_size.height;
 	const Size2 minimum_size = default_minimum_size.minf(smallest_display_dimension);
 
-	// Define a minimum window size to prevent UI elements from overlapping or being cut off.
 	Window *w = Object::cast_to<Window>(SceneTree::get_singleton()->get_root());
 	if (w) {
-		// Calling Window methods this early doesn't sync properties with DS.
 		w->set_min_size(minimum_size);
 		DisplayServer::get_singleton()->window_set_min_size(minimum_size);
 	}
@@ -212,13 +171,10 @@ void ProjectManager::_update_size_limits() {
 
 	Rect2i screen_rect = DisplayServer::get_singleton()->screen_get_usable_rect(DisplayServer::get_singleton()->window_get_current_screen());
 	if (screen_rect.size != Vector2i()) {
-		// Center the window on the screen.
 		Vector2i window_position;
 		window_position.x = screen_rect.position.x + (screen_rect.size.x - real_size.x) / 2;
 		window_position.y = screen_rect.position.y + (screen_rect.size.y - real_size.y) / 2;
 
-		// Limit popup menus to prevent unusably long lists.
-		// We try to set it to half the screen resolution, but no smaller than the minimum window size.
 		Size2 half_screen_rect = (screen_rect.size * EDSCALE) / 2;
 		Size2 maximum_popup_size = half_screen_rect.max(minimum_size);
 		quick_settings_dialog->update_size_limits(maximum_popup_size);
@@ -252,7 +208,6 @@ void ProjectManager::_update_theme(bool p_skip_creation) {
 		}
 	}
 
-	// Update styles.
 	{
 		const int top_bar_separation = get_theme_constant("top_bar_separation", EditorStringName(Editor));
 		root_container->add_theme_constant_override("margin_left", top_bar_separation);
@@ -269,63 +224,55 @@ void ProjectManager::_update_theme(bool p_skip_creation) {
 		_set_main_view_icon(MAIN_VIEW_PROJECTS, get_editor_theme_icon("ProjectList"));
 		_set_main_view_icon(MAIN_VIEW_ASSETLIB, get_editor_theme_icon("AssetStore"));
 
-		// Project list.
-		{
-			loading_label->add_theme_font_override(SceneStringName(font), get_theme_font("bold", EditorStringName(EditorFonts)));
-			project_list_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox("project_list", "ProjectManager"));
+		loading_label->add_theme_font_override(SceneStringName(font), get_theme_font("bold", EditorStringName(EditorFonts)));
+		project_list_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox("project_list", "ProjectManager"));
 
-			empty_list_create_project->set_button_icon(get_editor_theme_icon("Add"));
-			empty_list_import_project->set_button_icon(get_editor_theme_icon("Load"));
-			empty_list_open_assetlib->set_button_icon(get_editor_theme_icon("AssetStore"));
+		empty_list_create_project->set_button_icon(get_editor_theme_icon("Add"));
+		empty_list_import_project->set_button_icon(get_editor_theme_icon("Load"));
+		empty_list_open_assetlib->set_button_icon(get_editor_theme_icon("AssetStore"));
 
-			empty_list_online_warning->add_theme_font_override(SceneStringName(font), get_theme_font("italic", EditorStringName(EditorFonts)));
-			empty_list_online_warning->add_theme_color_override(SceneStringName(font_color), get_theme_color("font_placeholder_color", EditorStringName(Editor)));
+		empty_list_online_warning->add_theme_font_override(SceneStringName(font), get_theme_font("italic", EditorStringName(EditorFonts)));
+		empty_list_online_warning->add_theme_color_override(SceneStringName(font_color), get_theme_color("font_placeholder_color", EditorStringName(Editor)));
 
-			// Top bar.
-			search_box->set_right_icon(get_editor_theme_icon("Search"));
-			quick_settings_button->set_button_icon(get_editor_theme_icon("Tools"));
+		search_box->set_right_icon(get_editor_theme_icon("Search"));
+		quick_settings_button->set_button_icon(get_editor_theme_icon("Tools"));
 
-			// Sidebar.
-			create_btn->set_button_icon(get_editor_theme_icon("Add"));
-			import_btn->set_button_icon(get_editor_theme_icon("Load"));
-			scan_btn->set_button_icon(get_editor_theme_icon("Search"));
-			open_btn->set_button_icon(get_editor_theme_icon("Edit"));
-			open_options_btn->set_button_icon(get_editor_theme_icon("Collapse"));
-			run_btn->set_button_icon(get_editor_theme_icon("Play"));
-			rename_btn->set_button_icon(get_editor_theme_icon("Rename"));
-			duplicate_btn->set_button_icon(get_editor_theme_icon("Duplicate"));
-			manage_tags_btn->set_button_icon(get_editor_theme_icon("Script"));
-			erase_btn->set_button_icon(get_editor_theme_icon("Remove"));
-			erase_missing_btn->set_button_icon(get_editor_theme_icon("Clear"));
-			create_tag_btn->set_button_icon(get_editor_theme_icon("Add"));
-			donate_btn->set_button_icon(get_editor_theme_icon("Heart"));
+		create_btn->set_button_icon(get_editor_theme_icon("Add"));
+		import_btn->set_button_icon(get_editor_theme_icon("Load"));
+		scan_btn->set_button_icon(get_editor_theme_icon("Search"));
+		open_btn->set_button_icon(get_editor_theme_icon("Edit"));
+		open_options_btn->set_button_icon(get_editor_theme_icon("Collapse"));
+		run_btn->set_button_icon(get_editor_theme_icon("Play"));
+		rename_btn->set_button_icon(get_editor_theme_icon("Rename"));
+		duplicate_btn->set_button_icon(get_editor_theme_icon("Duplicate"));
+		manage_tags_btn->set_button_icon(get_editor_theme_icon("Script"));
+		erase_btn->set_button_icon(get_editor_theme_icon("Remove"));
+		erase_missing_btn->set_button_icon(get_editor_theme_icon("Clear"));
+		create_tag_btn->set_button_icon(get_editor_theme_icon("Add"));
+		donate_btn->set_button_icon(get_editor_theme_icon("Heart"));
 
-			tag_error->add_theme_color_override(SceneStringName(font_color), get_theme_color("error_color", EditorStringName(Editor)));
-			tag_edit_error->add_theme_color_override(SceneStringName(font_color), get_theme_color("error_color", EditorStringName(Editor)));
+		tag_error->add_theme_color_override(SceneStringName(font_color), get_theme_color("error_color", EditorStringName(Editor)));
+		tag_edit_error->add_theme_color_override(SceneStringName(font_color), get_theme_color("error_color", EditorStringName(Editor)));
 
-			const int h_separation = get_theme_constant("sidebar_button_icon_separation", "ProjectManager");
-			create_btn->add_theme_constant_override("h_separation", h_separation);
-			import_btn->add_theme_constant_override("h_separation", h_separation);
-			scan_btn->add_theme_constant_override("h_separation", h_separation);
-			open_btn->add_theme_constant_override("h_separation", h_separation);
-			run_btn->add_theme_constant_override("h_separation", h_separation);
-			rename_btn->add_theme_constant_override("h_separation", h_separation);
-			duplicate_btn->add_theme_constant_override("h_separation", h_separation);
-			manage_tags_btn->add_theme_constant_override("h_separation", h_separation);
-			erase_btn->add_theme_constant_override("h_separation", h_separation);
-			erase_missing_btn->add_theme_constant_override("h_separation", h_separation);
+		const int h_separation = get_theme_constant("sidebar_button_icon_separation", "ProjectManager");
+		create_btn->add_theme_constant_override("h_separation", h_separation);
+		import_btn->add_theme_constant_override("h_separation", h_separation);
+		scan_btn->add_theme_constant_override("h_separation", h_separation);
+		open_btn->add_theme_constant_override("h_separation", h_separation);
+		run_btn->add_theme_constant_override("h_separation", h_separation);
+		rename_btn->add_theme_constant_override("h_separation", h_separation);
+		duplicate_btn->add_theme_constant_override("h_separation", h_separation);
+		manage_tags_btn->add_theme_constant_override("h_separation", h_separation);
+		erase_btn->add_theme_constant_override("h_separation", h_separation);
+		erase_missing_btn->add_theme_constant_override("h_separation", h_separation);
 
-			open_btn_container->add_theme_constant_override("separation", 0);
-			open_options_popup->set_item_icon(0, get_editor_theme_icon("Notification"));
-			open_options_popup->set_item_icon(1, get_editor_theme_icon("NodeWarning"));
-		}
+		open_btn_container->add_theme_constant_override("separation", 0);
+		open_options_popup->set_item_icon(0, get_editor_theme_icon("Notification"));
+		open_options_popup->set_item_icon(1, get_editor_theme_icon("NodeWarning"));
 
-		// Dialogs.
 		migration_guide_button->set_button_icon(get_editor_theme_icon("ExternalLink"));
 
-		// Asset store popup.
 		if (asset_library && EDITOR_GET("interface/theme/style") == "Classic") {
-			// Removes extra border margins.
 			asset_library->add_theme_style_override(SceneStringName(panel), memnew(StyleBoxEmpty));
 		}
 	}
@@ -377,7 +324,6 @@ void ProjectManager::_set_main_view_icon(MainViewTab p_id, const Ref<Texture2D> 
 
 	if (p_icon.is_valid()) {
 		toggle_button->set_button_icon(p_icon);
-		// Make sure the control is updated if the icon is reimported.
 		p_icon->connect_changed(callable_mp((Control *)toggle_button, &Control::update_minimum_size));
 	} else {
 		toggle_button->set_button_icon(Ref<Texture2D>());
@@ -401,14 +347,8 @@ void ProjectManager::_select_main_view(int p_id) {
 
 #ifndef ANDROID_ENABLED
 	if (current_main_view == MAIN_VIEW_PROJECTS && search_box->is_inside_tree()) {
-		// Automatically grab focus when the user moves from the Templates tab
-		// back to the Projects tab.
-		// Needs to be deferred, otherwise the focus outline is always drawn.
 		callable_mp((Control *)search_box, &Control::grab_focus).call_deferred(true);
 	}
-
-	// The Templates tab's search field is focused on display in the asset
-	// library editor plugin code.
 #endif
 }
 
@@ -423,7 +363,6 @@ void ProjectManager::_open_asset_library_confirmed() {
 		EditorSettings::get_singleton()->notify_changes();
 		EditorSettings::get_singleton()->save();
 	}
-
 	_select_main_view(MAIN_VIEW_ASSETLIB);
 }
 
@@ -432,24 +371,19 @@ void ProjectManager::_project_list_menu_option(int p_option) {
 		case ProjectList::MENU_EDIT:
 			_open_selected_projects();
 			break;
-
 		case ProjectList::MENU_EDIT_VERBOSE:
 			open_in_verbose_mode = true;
 			_open_selected_projects_check_warnings();
 			break;
-
 		case ProjectList::MENU_EDIT_RECOVERY:
 			_open_recovery_mode_ask(true);
 			break;
-
 		case ProjectList::MENU_RUN:
 			_run_project_confirm();
 			break;
-
 		case ProjectList::MENU_SHOW_IN_FILE_MANAGER:
 			_show_project_in_file_manager();
 			break;
-
 		case ProjectList::MENU_COPY_PATH: {
 			const Vector<ProjectList::Item> &selected_list = project_list->get_selected_projects();
 			if (selected_list.is_empty()) {
@@ -457,19 +391,15 @@ void ProjectManager::_project_list_menu_option(int p_option) {
 			}
 			DisplayServer::get_singleton()->clipboard_set(selected_list[0].path);
 		} break;
-
 		case ProjectList::MENU_RENAME:
 			_rename_project();
 			break;
-
 		case ProjectList::MENU_MANAGE_TAGS:
 			_manage_project_tags();
 			break;
-
 		case ProjectList::MENU_DUPLICATE:
 			_duplicate_project();
 			break;
-
 		case ProjectList::MENU_REMOVE:
 			_erase_project();
 			break;
@@ -482,23 +412,15 @@ void ProjectManager::_show_error(const String &p_message, const Size2 &p_min_siz
 }
 
 void ProjectManager::_dim_window() {
-	// This method must be called before calling `get_tree()->quit()`.
-	// Otherwise, its effect won't be visible
-
-	// Dim the project manager window while it's quitting to make it clearer that it's busy.
-	// No transition is applied, as the effect needs to be visible immediately
 	float c = 0.5f;
 	Color dim_color = Color(c, c, c);
 	set_modulate(dim_color);
 }
 
-// Quick settings.
-
 void ProjectManager::_show_quick_settings() {
 	if (!EditorPropertyNameProcessor::get_singleton()) {
 		EditorPropertyNameProcessor *epnp = memnew(EditorPropertyNameProcessor);
 		add_child(epnp);
-
 		EditorHelp::generate_doc();
 	}
 	quick_settings_dialog->popup_centered(Size2(640, 200) * EDSCALE);
@@ -508,12 +430,9 @@ void ProjectManager::_restart_confirmed() {
 	List<String> args = OS::get_singleton()->get_cmdline_args();
 	Error err = OS::get_singleton()->create_instance(args);
 	ERR_FAIL_COND(err);
-
 	_dim_window();
 	get_tree()->quit();
 }
-
-// Project list.
 
 void ProjectManager::_update_list_placeholder() {
 	if (project_list->get_project_count() > 0) {
@@ -541,7 +460,6 @@ void ProjectManager::_scan_projects() {
 
 void ProjectManager::_run_project() {
 	const HashSet<String> &selected_list = project_list->get_selected_project_keys();
-
 	if (selected_list.size() < 1) {
 		return;
 	}
@@ -566,20 +484,16 @@ void ProjectManager::_run_project_confirm() {
 
 		const String &path = selected_list[i].path;
 
-		// `.substr(6)` on `ProjectSettings::get_singleton()->get_imported_files_path()` strips away the leading "res://".
 		if (!DirAccess::exists(path.path_join(ProjectSettings::get_singleton()->get_imported_files_path().substr(6)))) {
 			_show_error(TTRC("Can't run project: Assets need to be imported first.\nPlease edit the project to trigger the initial import."));
 			continue;
 		}
 
 		print_line("Running project: " + path);
-
 		List<String> args;
-
 		for (const String &a : Main::get_forwardable_cli_arguments(Main::CLI_SCOPE_PROJECT)) {
 			args.push_back(a);
 		}
-
 		args.push_back("--path");
 		args.push_back(path);
 
@@ -604,7 +518,6 @@ void ProjectManager::_open_selected_projects() {
 		print_line("Editing project: " + path);
 
 		List<String> args;
-
 		for (const String &a : Main::get_forwardable_cli_arguments(Main::CLI_SCOPE_TOOL)) {
 			args.push_back(a);
 		}
@@ -616,27 +529,20 @@ void ProjectManager::_open_selected_projects() {
 		if (open_in_recovery_mode) {
 			args.push_back("--recovery-mode");
 		}
-
 		if (open_in_verbose_mode) {
 			args.push_back("--verbose");
 		}
-
 		if (ask_upgrade_tool->is_pressed()) {
 			args.push_back("--run-upgrade-tool");
 		}
 
 #ifdef ANDROID_ENABLED
 		args.push_back("--verbose");
-
-		print_line(".NET/Android: Preparing clean restart into Editor mode...");
-		
-		// Sabihan ang Android OS na mag-restart gamit ang project arguments
+		print_line(".NET/Android: Switching into Editor mode...");
 		OS::get_singleton()->set_restart_on_exit(true, args);
-
 		project_list->project_opening_initiated = true;
 		_dim_window();
 
-		// IMPORTANT: I-flush ang lahat ng logs bago mag-quit
 		fflush(stdout);
 		fflush(stderr);
 
@@ -677,29 +583,25 @@ void ProjectManager::_open_selected_projects_check_warnings() {
 		return;
 	}
 
-	// Update the project settings or don't open.
 	const int config_version = project.version;
 	PackedStringArray unsupported_features = project.unsupported_features;
 
-	ask_update_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_LEFT); // Reset in case of previous center align.
+	ask_update_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_LEFT);
 	ask_update_backup->set_pressed(false);
 	ask_upgrade_tool->set_pressed(false);
 	full_convert_button->hide();
 	migration_guide_button->hide();
 	ask_update_backup->hide();
 	ask_upgrade_tool->hide();
-
 	ask_update_settings->get_ok_button()->set_text("OK");
 
-	// Check if the config_version property was empty or 0.
 	if (config_version == 0) {
 		ask_update_label->set_text(vformat(TTR("The selected project \"%s\" does not specify its supported Godot version in its configuration file (\"project.godot\").\n\nProject path: %s\n\nIf you proceed with opening it, it will be converted to Godot's current configuration file format.\n\nWarning: You won't be able to open the project with previous versions of the engine anymore."), project.project_name, project.path));
 		ask_update_settings->popup_centered(popup_min_size);
 		return;
 	}
-	// Check if we need to convert project settings from an earlier engine version.
 	if (config_version < ProjectSettings::CONFIG_VERSION) {
-		if (config_version == GODOT4_CONFIG_VERSION - 1 && ProjectSettings::CONFIG_VERSION == GODOT4_CONFIG_VERSION) { // Conversion from Godot 3 to 4.
+		if (config_version == GODOT4_CONFIG_VERSION - 1 && ProjectSettings::CONFIG_VERSION == GODOT4_CONFIG_VERSION) {
 			full_convert_button->show();
 			ask_update_label->set_text(vformat(TTR("The selected project \"%s\" was generated by Godot 3.x, and needs to be converted for Godot 4.x.\n\nProject path: %s\n\nYou have three options:\n- Convert only the configuration file (\"project.godot\"). Use this to open the project without attempting to convert its scenes, resources and scripts.\n- Convert the entire project including its scenes, resources and scripts (recommended if you are upgrading).\n- Do nothing and go back.\n\nWarning: If you select a conversion option, you won't be able to open the project with previous versions of the engine anymore."), project.project_name, project.path));
 			ask_update_settings->get_ok_button()->set_text(TTRC("Convert project.godot Only"));
@@ -710,15 +612,13 @@ void ProjectManager::_open_selected_projects_check_warnings() {
 		ask_update_backup->show();
 		migration_guide_button->show();
 		ask_update_settings->popup_centered(popup_min_size);
-		ask_update_settings->get_cancel_button()->grab_focus(); // To prevent accidents.
+		ask_update_settings->get_cancel_button()->grab_focus();
 		return;
 	}
-	// Check if the file was generated by a newer, incompatible engine version.
 	if (config_version > ProjectSettings::CONFIG_VERSION) {
 		_show_error(vformat(TTR("Can't open project \"%s\" at the following path:\n\n%s\n\nThe project settings were created by a newer engine version, whose settings are not compatible with this version."), project.project_name, project.path), popup_min_size);
 		return;
 	}
-	// Check if the project is using features not supported by this build of Godot.
 	if (!unsupported_features.is_empty()) {
 		String warning_message = "";
 		for (int i = 0; i < unsupported_features.size(); i++) {
@@ -729,9 +629,11 @@ void ProjectManager::_open_selected_projects_check_warnings() {
 				unsupported_features.remove_at(i);
 				i--;
 			} else if (feature == "C#") {
+#ifndef MODULE_MONO_ENABLED
 				warning_message += TTR("Warning: This project uses C#, but this build of Godot does not have\nthe Mono module. If you proceed you will not be able to use any C# scripts.\n\n");
 				unsupported_features.remove_at(i);
 				i--;
+#endif
 			} else if (ProjectList::project_feature_looks_like_version(feature)) {
 				ask_update_backup->show();
 				if (project.control->is_older_version()) {
@@ -755,13 +657,11 @@ void ProjectManager::_open_selected_projects_check_warnings() {
 		return;
 	}
 
-	// Open if the project is up-to-date.
 	_open_selected_projects();
 }
 
 void ProjectManager::_open_selected_projects_check_recovery_mode() {
 	Vector<ProjectList::Item> selected_projects = project_list->get_selected_projects();
-
 	if (selected_projects.is_empty()) {
 		return;
 	}
@@ -773,7 +673,6 @@ void ProjectManager::_open_selected_projects_check_recovery_mode() {
 
 	open_in_verbose_mode = false;
 	open_in_recovery_mode = false;
-	// Check if the project failed to load during last startup.
 	if (project.recovery_mode) {
 		_open_recovery_mode_ask(false);
 		return;
@@ -786,14 +685,12 @@ void ProjectManager::_open_selected_projects_with_migration() {
 	if (ask_update_backup->is_pressed() && project_list->get_selected_projects().size() == 1) {
 		ask_update_settings->hide();
 		ask_update_backup->set_pressed(false);
-
 		_duplicate_project_with_action(POST_DUPLICATE_ACTION_OPEN);
 		return;
 	}
 
 #ifndef DISABLE_DEPRECATED
 	if (project_list->get_selected_projects().size() == 1) {
-		// Only migrate if a single project is opened.
 		_minor_project_migrate();
 	}
 #endif
@@ -820,7 +717,6 @@ void ProjectManager::_new_project() {
 
 void ProjectManager::_rename_project() {
 	const Vector<ProjectList::Item> &selected_list = project_list->get_selected_projects();
-
 	if (selected_list.is_empty()) {
 		return;
 	}
@@ -844,7 +740,6 @@ void ProjectManager::_duplicate_project_with_action(PostDuplicateAction p_post_a
 	}
 
 	post_duplicate_action = p_post_action;
-
 	const ProjectList::Item &project = selected_projects[0];
 
 	project_dialog->set_mode(ProjectDialog::MODE_DUPLICATE);
@@ -867,7 +762,6 @@ void ProjectManager::_show_project_in_file_manager() {
 
 void ProjectManager::_erase_project() {
 	const HashSet<String> &selected_list = project_list->get_selected_project_keys();
-
 	if (selected_list.is_empty()) {
 		return;
 	}
@@ -880,7 +774,6 @@ void ProjectManager::_erase_project() {
 	}
 
 	erase_ask_label->set_text(confirm_message);
-	//delete_project_contents->set_pressed(false);
 	erase_ask->popup_centered();
 }
 
@@ -920,7 +813,6 @@ void ProjectManager::_update_project_buttons() {
 	duplicate_btn->set_disabled(empty_selection || is_missing_project_selected);
 	manage_tags_btn->set_disabled(empty_selection || is_missing_project_selected || selected_projects.size() > 1);
 	run_btn->set_disabled(empty_selection || is_missing_project_selected);
-
 	erase_missing_btn->set_disabled(!project_list->is_any_project_missing());
 }
 
@@ -929,14 +821,11 @@ void ProjectManager::_open_options_popup() {
 	rect.position.y += rect.size.height;
 	open_options_popup->set_size(Size2(rect.size.width, 0));
 	open_options_popup->set_position(rect.position);
-
 	open_options_popup->popup();
 }
 
 void ProjectManager::_open_recovery_mode_ask(bool manual) {
 	String recovery_mode_details;
-
-	// Only show the initial crash preamble if this popup wasn't manually triggered.
 	if (!manual) {
 		recovery_mode_details +=
 				TTR("It looks like Godot crashed when opening this project the last time. If you're having problems editing this project, you can try to open it in Recovery Mode.") +
@@ -965,17 +854,16 @@ void ProjectManager::_on_projects_updated() {
 	if (index != -1) {
 		project_list->ensure_project_visible(index);
 	}
-
 	project_list->update_dock_menu();
 }
 
 void ProjectManager::_on_open_options_selected(int p_option) {
 	switch (p_option) {
-		case 0: // Edit in verbose mode.
+		case 0:
 			open_in_verbose_mode = true;
 			_open_selected_projects_check_warnings();
 			break;
-		case 1: // Edit in recovery mode.
+		case 1:
 			_open_recovery_mode_ask(true);
 			break;
 	}
@@ -1004,7 +892,6 @@ void ProjectManager::_on_project_created(const String &dir, bool edit) {
 	if (edit) {
 		_open_selected_projects_check_warnings();
 	}
-
 	project_list->update_dock_menu();
 }
 
@@ -1020,10 +907,8 @@ void ProjectManager::_on_project_duplicated(const String &p_original_path, const
 		} else if (post_duplicate_action == POST_DUPLICATE_ACTION_FULL_CONVERSION) {
 			_full_convert_button_pressed();
 		}
-
 		project_list->update_dock_menu();
 	}
-
 	post_duplicate_action = POST_DUPLICATE_ACTION_NONE;
 }
 
@@ -1036,10 +921,6 @@ void ProjectManager::_on_order_option_changed(int p_idx) {
 void ProjectManager::_on_search_term_changed(const String &p_term) {
 	project_list->set_search_term(p_term);
 	project_list->sort_projects();
-
-	// Select the first visible project in the list.
-	// This makes it possible to open a project without ever touching the mouse,
-	// as the search field is automatically focused on startup.
 	project_list->select_first_visible_project();
 	_update_project_buttons();
 }
@@ -1048,15 +929,12 @@ void ProjectManager::_on_search_term_submitted(const String &p_text) {
 	if (current_main_view != MAIN_VIEW_PROJECTS) {
 		return;
 	}
-
 	_open_selected_projects_check_recovery_mode();
 }
 
 LineEdit *ProjectManager::get_search_box() {
 	return search_box;
 }
-
-// Project tag management.
 
 void ProjectManager::_manage_project_tags() {
 	for (int i = 0; i < project_tags->get_child_count(); i++) {
@@ -1112,7 +990,7 @@ void ProjectManager::_apply_project_tags() {
 		memdelete(cfg);
 		tag_edit_error->set_text(vformat(TTR("Couldn't load project at '%s'. It may be missing or corrupted."), project_godot));
 		tag_edit_error->show();
-		callable_mp((Window *)tag_manage_dialog, &Window::show).call_deferred(); // Make sure the dialog does not disappear.
+		callable_mp((Window *)tag_manage_dialog, &Window::show).call_deferred();
 		return;
 	} else {
 		tags.sort();
@@ -1145,7 +1023,6 @@ void ProjectManager::_set_new_tag_name(const String p_name) {
 
 	bool was_underscore = false;
 	for (const char32_t &c : p_name.span()) {
-		// Treat spaces as underscores, as we convert spaces to underscores automatically in the tag input field.
 		if (c == '_' || c == ' ') {
 			if (was_underscore) {
 				tag_error->set_text(TTRC("Tag name can't contain consecutive underscores or spaces."));
@@ -1172,10 +1049,8 @@ void ProjectManager::_create_new_tag() {
 	if (!tag_error->get_text().is_empty()) {
 		return;
 	}
-	create_tag_dialog->hide(); // When using text_submitted, need to hide manually.
+	create_tag_dialog->hide();
 
-	// Enforce a valid tag name (no spaces, lowercase only) automatically.
-	// The project manager displays underscores as spaces, and capitalization is performed automatically.
 	const String new_tag = new_tag_name->get_text().strip_edges().to_lower().replace_char(' ', '_');
 	add_new_tag(new_tag);
 	_add_project_tag(new_tag);
@@ -1191,14 +1066,11 @@ void ProjectManager::add_new_tag(const String &p_tag) {
 	}
 }
 
-// Project converter/migration tool.
-
 #ifndef DISABLE_DEPRECATED
 void ProjectManager::_minor_project_migrate() {
 	const ProjectList::Item migrated_project = project_list->get_selected_projects()[0];
 
 	if (version_convert_feature.begins_with("4.3")) {
-		// Migrate layout after scale changes.
 		const float edscale = EDSCALE;
 		if (edscale != 1.0) {
 			Ref<ConfigFile> layout_file;
@@ -1226,7 +1098,6 @@ void ProjectManager::_full_convert_button_pressed() {
 
 	if (ask_update_backup->is_pressed()) {
 		ask_update_backup->set_pressed(false);
-
 		_duplicate_project_with_action(POST_DUPLICATE_ACTION_FULL_CONVERSION);
 		return;
 	}
@@ -1262,8 +1133,6 @@ void ProjectManager::_perform_full_project_conversion() {
 	project_list->set_project_version(path, GODOT4_CONFIG_VERSION);
 }
 
-// Input and I/O.
-
 void ProjectManager::shortcut_input(const Ref<InputEvent> &p_ev) {
 	ERR_FAIL_COND(p_ev.is_null());
 
@@ -1274,9 +1143,6 @@ void ProjectManager::shortcut_input(const Ref<InputEvent> &p_ev) {
 			return;
 		}
 
-		// Pressing Command + Q quits the Project Manager
-		// This is handled by the platform implementation on macOS,
-		// so only define the shortcut on other platforms
 #ifndef MACOS_ENABLED
 		if (k->get_keycode_with_modifiers() == (KeyModifierMask::META | Key::Q)) {
 			_dim_window();
@@ -1298,13 +1164,11 @@ void ProjectManager::shortcut_input(const Ref<InputEvent> &p_ev) {
 				if (project_list->get_project_count() > 0) {
 					project_list->ensure_project_visible(0);
 				}
-
 			} break;
 			case Key::END: {
 				if (project_list->get_project_count() > 0) {
 					project_list->ensure_project_visible(project_list->get_project_count() - 1);
 				}
-
 			} break;
 			case Key::F: {
 				if (k->is_command_or_control_pressed()) {
@@ -1335,7 +1199,6 @@ void ProjectManager::shortcut_input(const Ref<InputEvent> &p_ev) {
 }
 
 void ProjectManager::_files_dropped(PackedStringArray p_files) {
-	// TODO: Support installing multiple ZIPs at the same time?
 	if (p_files.size() == 1 && p_files[0].ends_with(".zip")) {
 		const String &file = p_files[0];
 		_install_project(file, file.get_file().get_basename().capitalize());
@@ -1348,7 +1211,7 @@ void ProjectManager::_files_dropped(PackedStringArray p_files) {
 		const String &file = p_files[i];
 		folders_set.insert(da->dir_exists(file) ? file : file.get_base_dir());
 	}
-	ERR_FAIL_COND(folders_set.is_empty()); // This can't really happen, we consume every dropped file path above.
+	ERR_FAIL_COND(folders_set.is_empty());
 
 	PackedStringArray folders;
 	for (const String &E : folders_set) {
@@ -1377,22 +1240,18 @@ void ProjectManager::_open_donate_page() {
 	OS::get_singleton()->shell_open("https://fund.godotengine.org/?ref=project_manager");
 }
 
-// Object methods.
-
 ProjectManager::ProjectManager() {
 	singleton = this;
 
-	// Turn off some servers we aren't going to be using in the Project Manager.
 	NavigationServer3D::get_singleton()->set_active(false);
 	PhysicsServer3D::get_singleton()->set_active(false);
 	PhysicsServer2D::get_singleton()->set_active(false);
 
-	// Initialize settings.
 	{
 		if (!EditorSettings::get_singleton()) {
 			EditorSettings::create();
 		}
-		EditorSettings::get_singleton()->set_optimize_save(false); // Just write settings as they come.
+		EditorSettings::get_singleton()->set_optimize_save(false);
 
 		{
 			bool agile_input_event_flushing = EDITOR_GET("input/buffering/agile_event_flushing");
@@ -1406,7 +1265,6 @@ ProjectManager::ProjectManager() {
 
 		switch (display_scale) {
 			case 0:
-				// Try applying a suitable display scale automatically.
 				EditorScale::set_scale(EditorSettings::get_auto_display_scale());
 				break;
 			case 1:
@@ -1438,8 +1296,7 @@ ProjectManager::ProjectManager() {
 		FileDialog::set_default_display_mode((FileDialog::DisplayMode)EDITOR_GET("filesystem/file_dialog/display_mode").operator int());
 
 		int swap_cancel_ok = EDITOR_GET("interface/editor/appearance/accept_dialog_cancel_ok_buttons");
-		if (swap_cancel_ok != 0) { // 0 is auto, set in register_scene based on DisplayServer.
-			// Swap on means OK first.
+		if (swap_cancel_ok != 0) {
 			AcceptDialog::set_swap_cancel_ok(swap_cancel_ok == 2);
 		}
 
@@ -1452,7 +1309,6 @@ ProjectManager::ProjectManager() {
 
 	SceneTree::get_singleton()->get_root()->connect("files_dropped", callable_mp(this, &ProjectManager::_files_dropped));
 
-	// Initialize UI.
 	{
 		int pm_root_dir = EDITOR_GET("interface/editor/localization/ui_layout_direction");
 		Control::set_root_layout_direction(pm_root_dir);
@@ -1463,11 +1319,8 @@ ProjectManager::ProjectManager() {
 		DisplayServer::set_early_window_clear_color_override(true, theme->get_color(SNAME("background"), EditorStringName(Editor)));
 
 		set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-
 		_build_icon_type_cache(theme);
 	}
-
-	// Project manager layout.
 
 	background_panel = memnew(Panel);
 	add_child(background_panel);
@@ -1480,7 +1333,6 @@ ProjectManager::ProjectManager() {
 	main_vbox = memnew(VBoxContainer);
 	root_container->add_child(main_vbox);
 
-	// Title bar.
 	bool can_expand = bool(EDITOR_GET("interface/editor/appearance/expand_to_title")) && DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_EXTEND_TO_TITLE);
 
 	{
@@ -1488,7 +1340,6 @@ ProjectManager::ProjectManager() {
 		main_vbox->add_child(title_bar);
 
 		if (can_expand) {
-			// Add spacer to avoid other controls under window minimize/maximize/close buttons (left side).
 			left_menu_spacer = memnew(Control);
 			left_menu_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 			title_bar->add_child(left_menu_spacer);
@@ -1509,7 +1360,7 @@ ProjectManager::ProjectManager() {
 		bool global_menu = !bool(EDITOR_GET("interface/editor/appearance/use_embedded_menu")) && NativeMenu::get_singleton()->has_feature(NativeMenu::FEATURE_GLOBAL_MENU);
 		if (global_menu) {
 			MenuBar *main_menu_bar = memnew(MenuBar);
-			main_menu_bar->set_start_index(0); // Main menu, add to the start of global menu.
+			main_menu_bar->set_start_index(0);
 			main_menu_bar->set_prefer_global_menu(true);
 			left_hbox->add_child(main_menu_bar);
 
@@ -1527,7 +1378,6 @@ ProjectManager::ProjectManager() {
 			}
 		}
 		if (can_expand) {
-			// Spacer to center main toggles.
 			left_spacer = memnew(Control);
 			left_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 			title_bar->add_child(left_spacer);
@@ -1541,7 +1391,6 @@ ProjectManager::ProjectManager() {
 		title_bar->set_center_control(main_view_toggles);
 
 		if (can_expand) {
-			// Spacer to center main toggles.
 			right_spacer = memnew(Control);
 			right_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 			title_bar->add_child(right_spacer);
@@ -1562,7 +1411,6 @@ ProjectManager::ProjectManager() {
 		quick_settings_button->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_show_quick_settings));
 
 		if (can_expand) {
-			// Add spacer to avoid other controls under the window minimize/maximize/close buttons (right side).
 			right_menu_spacer = memnew(Control);
 			right_menu_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 			title_bar->add_child(right_menu_spacer);
@@ -1573,13 +1421,11 @@ ProjectManager::ProjectManager() {
 	main_view_container->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	main_vbox->add_child(main_view_container);
 
-	// Project list view.
 	{
 		local_projects_vb = memnew(VBoxContainer);
 		local_projects_vb->set_name("LocalProjectsTab");
 		_add_main_view(MAIN_VIEW_PROJECTS, TTRC("Projects"), Ref<Texture2D>(), local_projects_vb);
 
-		// Project list's top bar.
 		{
 			HBoxContainer *hb = memnew(HBoxContainer);
 			hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -1638,7 +1484,6 @@ ProjectManager::ProjectManager() {
 			filter_option->add_item(TTRC("Tags"));
 		}
 
-		// Project list and its sidebar.
 		{
 			HBoxContainer *project_list_hbox = memnew(HBoxContainer);
 			local_projects_vb->add_child(project_list_hbox);
@@ -1658,7 +1503,6 @@ ProjectManager::ProjectManager() {
 			project_list->connect(ProjectList::SIGNAL_MENU_OPTION_SELECTED, callable_mp(this, &ProjectManager::_project_list_menu_option));
 			project_list->connect(SceneStringName(minimum_size_changed), callable_mp(this, &ProjectManager::_update_compact_mode).bind(true));
 
-			// Empty project list placeholder.
 			{
 				empty_list_placeholder = memnew(VBoxContainer);
 				empty_list_placeholder->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
@@ -1707,7 +1551,6 @@ ProjectManager::ProjectManager() {
 				empty_list_placeholder->add_child(empty_list_online_warning);
 			}
 
-			// The side bar with the edit, run, rename, etc. buttons.
 			project_list_sidebar = memnew(VBoxContainer);
 			project_list_sidebar->set_custom_minimum_size(Size2(120, 120) * EDSCALE);
 			project_list_hbox->add_child(project_list_sidebar);
@@ -1756,7 +1599,6 @@ ProjectManager::ProjectManager() {
 
 			rename_btn = memnew(Button);
 			rename_btn->set_text(TTRC("Rename"));
-			// The F2 shortcut isn't overridden with Enter on macOS as Enter is already used to edit a project.
 			rename_btn->set_shortcut(ED_SHORTCUT("project_manager/rename_project", TTRC("Rename Project"), Key::F2));
 			rename_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_rename_project));
 			sidebar_buttons_containter->add_child(rename_btn);
@@ -1789,7 +1631,6 @@ ProjectManager::ProjectManager() {
 		}
 	}
 
-	// Asset store view.
 	if (AssetLibraryEditorPlugin::is_available()) {
 		asset_library = memnew(EditorAssetLibrary(true));
 		asset_library->set_name("AssetLibraryTab");
@@ -1803,7 +1644,6 @@ ProjectManager::ProjectManager() {
 		asset_library_toggle->set_tooltip_text(TTRC("Asset Store not available (due to using Web editor, or because SSL support disabled)."));
 	}
 
-	// Footer bar.
 	{
 		HBoxContainer *footer_bar = memnew(HBoxContainer);
 		footer_bar->set_alignment(BoxContainer::ALIGNMENT_END);
@@ -1817,12 +1657,10 @@ ProjectManager::ProjectManager() {
 #endif
 
 		EditorVersionButton *version_btn = memnew(EditorVersionButton(EditorVersionButton::FORMAT_WITH_BUILD));
-		// Fade the version label to be less prominent, but still readable.
 		version_btn->set_self_modulate(Color(1, 1, 1, 0.6));
 		footer_bar->add_child(version_btn);
 	}
 
-	// Dialogs.
 	{
 		quick_settings_dialog = memnew(QuickSettingsDialog);
 		add_child(quick_settings_dialog);
@@ -1831,7 +1669,7 @@ ProjectManager::ProjectManager() {
 		scan_dir = memnew(EditorFileDialog);
 		scan_dir->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
 		scan_dir->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_DIR);
-		scan_dir->set_title(TTRC("Select a Folder to Scan")); // Must be after mode or it's overridden.
+		scan_dir->set_title(TTRC("Select a Folder to Scan"));
 		scan_dir->set_current_dir(EDITOR_GET("filesystem/directories/default_project_path"));
 		add_child(scan_dir);
 		scan_dir->connect("dir_selected", callable_mp(project_list, &ProjectList::find_projects));
@@ -1853,12 +1691,6 @@ ProjectManager::ProjectManager() {
 		erase_ask_label = memnew(Label);
 		erase_ask_label->set_focus_mode(FOCUS_ACCESSIBILITY);
 		erase_ask_vb->add_child(erase_ask_label);
-
-		// Comment out for now until we have a better warning system to
-		// ensure users delete their project only.
-		//delete_project_contents = memnew(CheckBox);
-		//delete_project_contents->set_text(TTRC("Also delete project contents (no undo!)"));
-		//erase_ask_vb->add_child(delete_project_contents);
 
 		multi_open_ask = memnew(ConfirmationDialog);
 		multi_open_ask->set_flag(Window::FLAG_RESIZE_DISABLED, true);
@@ -1929,7 +1761,6 @@ ProjectManager::ProjectManager() {
 		add_child(about_dialog);
 	}
 
-	// Tag management.
 	{
 		tag_manage_dialog = memnew(ConfirmationDialog);
 		add_child(tag_manage_dialog);
@@ -2004,7 +1835,6 @@ ProjectManager::ProjectManager() {
 		_set_new_tag_name("");
 	}
 
-	// Initialize project list.
 	{
 		project_list->load_project_list();
 
@@ -2033,7 +1863,6 @@ ProjectManager::ProjectManager() {
 		initialized = true;
 	}
 
-	// Extend menu bar to window title.
 	if (can_expand) {
 		DisplayServer::get_singleton()->process_events();
 		DisplayServer::get_singleton()->window_set_flag(DisplayServerEnums::WINDOW_FLAG_EXTEND_TO_TITLE, true, DisplayServerEnums::MAIN_WINDOW_ID);
@@ -2047,7 +1876,6 @@ ProjectManager::ProjectManager() {
 ProjectManager::~ProjectManager() {
 	singleton = nullptr;
 	EditorInspector::cleanup_plugins();
-
 	EditorHelp::cleanup_doc();
 
 #if defined(MODULE_GDSCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
