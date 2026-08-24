@@ -278,7 +278,9 @@ void ProjectManager::_update_theme(bool p_skip_creation) {
 	}
 
 #if defined(MODULE_GDSCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
-	EditorHelpHighlighter::get_singleton()->clear_cache();
+	if (EditorHelpHighlighter::get_singleton()) {
+		EditorHelpHighlighter::get_singleton()->clear_cache();
+	}
 #endif
 
 #ifdef ANDROID_ENABLED
@@ -538,7 +540,7 @@ void ProjectManager::_open_selected_projects() {
 
 #ifdef ANDROID_ENABLED
 		args.push_back("--verbose");
-		print_line(".NET/Android: Switching into Editor mode...");
+		print_line(".NET/Android: Switching into Editor mode for C# project...");
 		OS::get_singleton()->set_restart_on_exit(true, args);
 		project_list->project_opening_initiated = true;
 		_dim_window();
@@ -1840,6 +1842,15 @@ ProjectManager::ProjectManager() {
 
 		Ref<DirAccess> dir_access = DirAccess::create(DirAccess::AccessType::ACCESS_FILESYSTEM);
 
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+		// Tiyakin na may GEngine workspace directory sa storage
+		if (dir_access.is_valid()) {
+			if (!dir_access->dir_exists("/storage/emulated/0/GEngine")) {
+				dir_access->make_dir_recursive("/storage/emulated/0/GEngine");
+			}
+		}
+#endif
+
 		String default_project_path = EDITOR_GET("filesystem/directories/default_project_path");
 		if (!default_project_path.is_empty() && !dir_access->dir_exists(default_project_path)) {
 			Error error = dir_access->make_dir_recursive(default_project_path);
@@ -1879,7 +1890,9 @@ ProjectManager::~ProjectManager() {
 	EditorHelp::cleanup_doc();
 
 #if defined(MODULE_GDSCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
-	EditorHelpHighlighter::free_singleton();
+	if (EditorHelpHighlighter::get_singleton()) {
+		EditorHelpHighlighter::free_singleton();
+	}
 #endif
 
 	if (EditorSettings::get_singleton()) {
