@@ -44,8 +44,8 @@ jobs:
         run: |
           python ./misc/scripts/install_swappy_android.py
 
-      # 1. DOWNLOAD AT I-EXTRACT ANG BUONG OFFICIAL .NET 8 ANDROID-ARM64 RUNTIME AT BCL DLLs
-      - name: Download and Bundle Full .NET 8 Runtime & Assemblies
+      # 1. DOWNLOAD AT I-STRUCTURE ANG BUONG .NET 8 RUNTIME, HOST, AT DOTNET FOLDER
+      - name: Download and Bundle Full .NET 8 Root & Runtime Assemblies
         run: |
           set -e
           WORK_DIR=/tmp/dotnet-android-arm64
@@ -53,14 +53,16 @@ jobs:
           cd $WORK_DIR
 
           DEST_JNI="$GITHUB_WORKSPACE/platform/android/java/editor/src/main/jniLibs/arm64-v8a"
-          DEST_ASSETS_API="$GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Api"
-          DEST_ASSETS_TOOLS="$GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Tools"
-          DEST_ASSETS_MONO="$GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Mono"
+          DEST_ASSETS="$GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets"
+          DEST_DOTNET="$DEST_ASSETS/dotnet"
+          DEST_GODOTSHARP="$DEST_ASSETS/GodotSharp"
 
           mkdir -p "$DEST_JNI"
-          mkdir -p "$DEST_ASSETS_API"
-          mkdir -p "$DEST_ASSETS_TOOLS"
-          mkdir -p "$DEST_ASSETS_MONO"
+          mkdir -p "$DEST_DOTNET/host/fxr/8.0.12"
+          mkdir -p "$DEST_DOTNET/shared/Microsoft.NETCore.App/8.0.12"
+          mkdir -p "$DEST_GODOTSHARP/Api"
+          mkdir -p "$DEST_GODOTSHARP/Tools"
+          mkdir -p "$DEST_GODOTSHARP/Mono"
 
           echo "=== 1. Downloading Official Microsoft Mono Android ARM64 Package ==="
           MONO_URLS=(
@@ -86,19 +88,24 @@ jobs:
 
           unzip -q -o mono_pack.zip -d mono_extracted
 
-          # Kopyahin ang lahat ng Native .so libraries sa jniLibs
-          echo "=== Copying Native .so files ==="
+          # Kopyahin ang lahat ng Native .so sa jniLibs
           find mono_extracted/ -name "*.so" -exec cp -v {} "$DEST_JNI/" \;
 
-          # Kopyahin ang lahat ng official .NET 8 BCL DLLs (System.Private.CoreLib, System.Runtime, etc.)
-          echo "=== Copying Full .NET 8 BCL Assemblies (.dll) ==="
-          find mono_extracted/ -name "*.dll" -exec cp -v {} "$DEST_ASSETS_MONO/" \;
-          find mono_extracted/ -name "*.dll" -exec cp -v {} "$DEST_ASSETS_API/" \;
+          # Kopyahin ang BCL DLLs sa GodotSharp Mono, Api, at dotnet shared folder
+          find mono_extracted/ -name "*.dll" -exec cp {} "$DEST_GODOTSHARP/Mono/" \;
+          find mono_extracted/ -name "*.dll" -exec cp {} "$DEST_GODOTSHARP/Api/" \;
+          find mono_extracted/ -name "*.dll" -exec cp {} "$DEST_DOTNET/shared/Microsoft.NETCore.App/8.0.12/" \;
 
-          echo "=== 2. Downloading Linux-ARM64 HostFXR for fallback ==="
+          echo "=== 2. Downloading and structuring .NET 8 Linux-ARM64 HostFXR & Root ==="
           mkdir -p /tmp/dotnet-arm64
           curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --runtime dotnet --version 8.0.8 --os linux --arch arm64 --install-dir /tmp/dotnet-arm64 || true
+          
           if [ -d /tmp/dotnet-arm64 ]; then
+            # Kopyahin ang hostfxr at hostpolicy sa jniLibs at sa assets/dotnet/host/fxr/
+            find /tmp/dotnet-arm64/ -name "libhostfxr.so" -exec cp -v {} "$DEST_JNI/" \; || true
+            find /tmp/dotnet-arm64/ -name "libhostfxr.so" -exec cp -v {} "$DEST_DOTNET/host/fxr/8.0.12/" \; || true
+            find /tmp/dotnet-arm64/ -name "libhostpolicy.so" -exec cp -v {} "$DEST_JNI/" \; || true
+            find /tmp/dotnet-arm64/ -name "libhostpolicy.so" -exec cp -v {} "$DEST_DOTNET/shared/Microsoft.NETCore.App/8.0.12/" \; || true
             find /tmp/dotnet-arm64/ -name "*.so" -exec cp -v {} "$DEST_JNI/" \; || true
           fi
 
@@ -108,17 +115,17 @@ jobs:
           if [ -n "$NDK_LIBCXX" ] && [ -f "$NDK_LIBCXX" ]; then
             cp -v "$NDK_LIBCXX" "$DEST_JNI/"
             cp -v "$NDK_LIBCXX" "$DEST_JNI/libgcc_s.so.1"
-            echo "Copied libc++_shared.so and libgcc_s.so.1!"
+            echo "Copied libc++_shared.so and created libgcc_s.so.1 compatibility stub!"
           fi
 
           if [ -f "$DEST_JNI/libmonosgen-2.0.so" ]; then
             cp -v "$DEST_JNI/libmonosgen-2.0.so" "$DEST_JNI/libmonosgen.so"
           fi
 
-          echo "=== Summary of Bundled Native Libraries in jniLibs ==="
+          echo "=== Summary of Bundled Native (.so) Libraries in jniLibs ==="
           ls -lh "$DEST_JNI/"
 
-      # 2. I-build ang Linux Host Editor para i-generate ang Mono Glue
+      # 2. I-build ang Linux Host Editor para i-generate ang C# Mono Glue
       - name: Build Host Linux Editor (Mono Glue Generator)
         run: |
           scons platform=linuxbsd target=editor module_mono_enabled=yes -j$(nproc)
@@ -134,20 +141,21 @@ jobs:
         run: |
           scons platform=android target=editor arch=arm64 ${{ env.SCONS_FLAGS }} -j$(nproc)
 
-      # 5. Isama ang lahat ng GodotSharp Assemblies sa APK Assets
-      - name: Bundle GodotSharp Assemblies & Configs into Android Assets
+      # 5. Isama ang lahat ng GodotSharp at Dotnet Assemblies sa APK Assets
+      - name: Bundle GodotSharp & Dotnet Assemblies into Android Assets
         run: |
           # Kopyahin ang mga nagawang GodotSharp assemblies sa assets
           cp -rv bin/GodotSharp/* platform/android/java/editor/src/main/assets/GodotSharp/
 
-          # I-configure ang Gradle para hindi i-compress ang mga DLLs, JSON, at SO
+          # I-configure ang Gradle para hindi i-compress ang mga DLLs, JSON, SO, at configs
           if [ -f platform/android/java/editor/build.gradle ]; then
-            printf "\nandroid {\n    aaptOptions {\n        noCompress 'dll', 'json', 'so'\n    }\n}\n" >> platform/android/java/editor/build.gradle
+            printf "\nandroid {\n    aaptOptions {\n        noCompress 'dll', 'json', 'so', 'props', 'targets'\n    }\n}\n" >> platform/android/java/editor/build.gradle
           fi
 
-          echo "=== Verifying GodotSharp Assets Content ==="
-          ls -la platform/android/java/editor/src/main/assets/GodotSharp/
-          ls -la platform/android/java/editor/src/main/assets/GodotSharp/Api/ | head -n 20 || true
+          echo "=== Verifying Assets Structure ==="
+          ls -la platform/android/java/editor/src/main/assets/
+          ls -la platform/android/java/editor/src/main/assets/dotnet/ || true
+          ls -la platform/android/java/editor/src/main/assets/GodotSharp/ || true
           ls -la platform/android/java/editor/src/main/assets/GodotSharp/Tools/ || true
 
       # 6. Buuin ang All-In-One Android Editor APK
