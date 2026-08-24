@@ -44,160 +44,121 @@ jobs:
         run: |
           python ./misc/scripts/install_swappy_android.py
 
-      # 1. DOWNLOAD AT I-BUNDLE LAHAT NG .NET 8 ANDROID PACKS AT BUONG DOTNET FOLDER
-      - name: Download and Bundle Full .NET 8 SDK, Runtimes, and Native Libraries
-        shell: python
+      # 1. DOWNLOAD AT I-EXTRACT ANG BUONG OFFICIAL .NET 8 ANDROID-ARM64 RUNTIME AT BCL DLLs
+      - name: Download and Bundle Full .NET 8 Runtime & Assemblies
         run: |
-          import os
-          import sys
-          import urllib.request
-          import json
-          import zipfile
-          import shutil
+          set -e
+          WORK_DIR=/tmp/dotnet-android-arm64
+          mkdir -p $WORK_DIR
+          cd $WORK_DIR
 
-          workspace = os.environ.get("GITHUB_WORKSPACE", os.getcwd())
-          dest_jni = os.path.join(workspace, "platform/android/java/editor/src/main/jniLibs/arm64-v8a")
-          dest_godotsharp = os.path.join(workspace, "platform/android/java/editor/src/main/assets/GodotSharp")
-          dest_api = os.path.join(dest_godotsharp, "Api")
-          dest_tools = os.path.join(dest_godotsharp, "Tools")
-          dest_dotnet = os.path.join(dest_godotsharp, "dotnet")
+          DEST_JNI="$GITHUB_WORKSPACE/platform/android/java/editor/src/main/jniLibs/arm64-v8a"
+          DEST_ASSETS_API="$GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Api"
+          DEST_ASSETS_TOOLS="$GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Tools"
+          DEST_ASSETS_MONO="$GITHUB_WORKSPACE/platform/android/java/editor/src/main/assets/GodotSharp/Mono"
 
-          os.makedirs(dest_jni, exist_ok=True)
-          os.makedirs(dest_api, exist_ok=True)
-          os.makedirs(dest_tools, exist_ok=True)
-          os.makedirs(dest_dotnet, exist_ok=True)
+          mkdir -p "$DEST_JNI"
+          mkdir -p "$DEST_ASSETS_API"
+          mkdir -p "$DEST_ASSETS_TOOLS"
+          mkdir -p "$DEST_ASSETS_MONO"
 
-          packages_to_download = [
-              "microsoft.netcore.app.runtime.mono.android-arm64",
-              "microsoft.netcore.app.host.android-arm64",
-              "microsoft.netcore.app.runtime.nativeaot.android-arm64"
-          ]
+          echo "=== 1. Downloading Official Microsoft Mono Android ARM64 Package ==="
+          MONO_URLS=(
+            "https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.runtime.mono.android-arm64/8.0.12/microsoft.netcore.app.runtime.mono.android-arm64.8.0.12.nupkg"
+            "https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.runtime.mono.android-arm64/8.0.8/microsoft.netcore.app.runtime.mono.android-arm64.8.0.8.nupkg"
+            "https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.runtime.mono.android-arm64/8.0.0/microsoft.netcore.app.runtime.mono.android-arm64.8.0.0.nupkg"
+          )
 
-          temp_dir = "/tmp/nuget_packages"
-          os.makedirs(temp_dir, exist_ok=True)
+          DOWNLOADED=false
+          for url in "${MONO_URLS[@]}"; do
+            echo "Trying $url..."
+            if curl -fsSL -o mono_pack.zip "$url"; then
+              DOWNLOADED=true
+              echo "Successfully downloaded Mono package!"
+              break
+            fi
+          done
 
-          for pkg in packages_to_download:
-              print(f"=== Resolving NuGet Package: {pkg} ===")
-              try:
-                  index_url = f"https://api.nuget.org/v3-flatcontainer/{pkg}/index.json"
-                  req = urllib.request.Request(index_url, headers={'User-Agent': 'Mozilla/5.0'})
-                  with urllib.request.urlopen(req) as resp:
-                      data = json.loads(resp.read().decode())
-                      versions = [v for v in data.get("versions", []) if v.startswith("8.0.")]
-                      if not versions:
-                          versions = data.get("versions", [])
-                      latest_ver = versions[-1] if versions else "8.0.8"
-                      print(f"Latest version found for {pkg}: {latest_ver}")
+          if [ "$DOWNLOADED" != true ]; then
+            echo "ERROR: Failed to download Mono runtime pack."
+            exit 1
+          fi
 
-                  nupkg_url = f"https://api.nuget.org/v3-flatcontainer/{pkg}/{latest_ver}/{pkg}.{latest_ver}.nupkg"
-                  pkg_file = os.path.join(temp_dir, f"{pkg}.zip")
-                  print(f"Downloading: {nupkg_url}")
+          unzip -q -o mono_pack.zip -d mono_extracted
 
-                  req = urllib.request.Request(nupkg_url, headers={'User-Agent': 'Mozilla/5.0'})
-                  with urllib.request.urlopen(req) as response, open(pkg_file, 'wb') as out_file:
-                      shutil.copyfileobj(response, out_file)
+          # Kopyahin ang lahat ng Native .so libraries sa jniLibs
+          echo "=== Copying Native .so files ==="
+          find mono_extracted/ -name "*.so" -exec cp -v {} "$DEST_JNI/" \;
 
-                  extract_dir = os.path.join(temp_dir, pkg)
-                  with zipfile.ZipFile(pkg_file, 'r') as zip_ref:
-                      zip_ref.extractall(extract_dir)
+          # Kopyahin ang lahat ng official .NET 8 BCL DLLs (System.Private.CoreLib, System.Runtime, etc.)
+          echo "=== Copying Full .NET 8 BCL Assemblies (.dll) ==="
+          find mono_extracted/ -name "*.dll" -exec cp -v {} "$DEST_ASSETS_MONO/" \;
+          find mono_extracted/ -name "*.dll" -exec cp -v {} "$DEST_ASSETS_API/" \;
 
-                  # 1. I-extract ang lahat ng .so native libraries papuntang jniLibs
-                  for root, dirs, files in os.walk(extract_dir):
-                      for file in files:
-                          full_path = os.path.join(root, file)
-                          if file.endswith(".so"):
-                              dest_file = os.path.join(dest_jni, file)
-                              shutil.copy2(full_path, dest_file)
-                              print(f"Copied .so: {file} -> jniLibs/arm64-v8a/")
-                          elif file.endswith(".dll") and "lib/net8.0" in full_path:
-                              # Kopyahin sa GodotSharp/Api
-                              shutil.copy2(full_path, os.path.join(dest_api, file))
-                              # Kopyahin din sa GodotSharp/dotnet/shared/Microsoft.NETCore.App/
-                              dotnet_shared = os.path.join(dest_dotnet, "shared/Microsoft.NETCore.App/8.0.8")
-                              os.makedirs(dotnet_shared, exist_ok=True)
-                              shutil.copy2(full_path, os.path.join(dotnet_shared, file))
+          echo "=== 2. Downloading Linux-ARM64 HostFXR for fallback ==="
+          mkdir -p /tmp/dotnet-arm64
+          curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --runtime dotnet --version 8.0.8 --os linux --arch arm64 --install-dir /tmp/dotnet-arm64 || true
+          if [ -d /tmp/dotnet-arm64 ]; then
+            find /tmp/dotnet-arm64/ -name "*.so" -exec cp -v {} "$DEST_JNI/" \; || true
+          fi
 
-                  print(f"Successfully processed {pkg}!\n")
-              except Exception as e:
-                  print(f"Notice for package {pkg}: {e}\n")
+          echo "=== 3. Extracting NDK Libs (libc++_shared.so, libgcc_s.so.1) ==="
+          NDK_PATH="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk}}"
+          NDK_LIBCXX=$(find "$NDK_PATH" -name "libc++_shared.so" 2>/dev/null | grep -E "aarch64|arm64-v8a" | head -n 1 || true)
+          if [ -n "$NDK_LIBCXX" ] && [ -f "$NDK_LIBCXX" ]; then
+            cp -v "$NDK_LIBCXX" "$DEST_JNI/"
+            cp -v "$NDK_LIBCXX" "$DEST_JNI/libgcc_s.so.1"
+            echo "Copied libc++_shared.so and libgcc_s.so.1!"
+          fi
 
-          # Create mono library alias
-          libmono_src = os.path.join(dest_jni, "libmonosgen-2.0.so")
-          libmono_dst = os.path.join(dest_jni, "libmonosgen.so")
-          if os.path.exists(libmono_src) and not os.path.exists(libmono_dst):
-              shutil.copy2(libmono_src, libmono_dst)
-              print("Created alias: libmonosgen.so -> libmonosgen-2.0.so")
+          if [ -f "$DEST_JNI/libmonosgen-2.0.so" ]; then
+            cp -v "$DEST_JNI/libmonosgen-2.0.so" "$DEST_JNI/libmonosgen.so"
+          fi
 
-          # Copy libc++_shared.so mula sa Android NDK
-          ndk_root = os.environ.get("ANDROID_SDK_ROOT", "")
-          for root, dirs, files in os.walk(ndk_root):
-              if "aarch64" in root and "libc++_shared.so" in files:
-                  libcxx_src = os.path.join(root, "libc++_shared.so")
-                  shutil.copy2(libcxx_src, os.path.join(dest_jni, "libc++_shared.so"))
-                  print(f"Copied libc++_shared.so from Android NDK: {libcxx_src}")
-                  break
+          echo "=== Summary of Bundled Native Libraries in jniLibs ==="
+          ls -lh "$DEST_JNI/"
 
-          print("=== Native libraries extracted ===")
-          for f in os.listdir(dest_jni):
-              print(f" - {f}")
-
-          print("=== GodotSharp/dotnet folder ready ===")
-          for root, dirs, files in os.walk(dest_dotnet):
-              for dir_name in dirs:
-                  print(f" Dir: {dir_name}")
-
-      # 2. Build Host Linux Editor & Generate Mono Glue
-      - name: Build Host Linux Editor (for Mono Glue)
+      # 2. I-build ang Linux Host Editor para i-generate ang Mono Glue
+      - name: Build Host Linux Editor (Mono Glue Generator)
         run: |
           scons platform=linuxbsd target=editor module_mono_enabled=yes -j$(nproc)
           ./bin/godot.linuxbsd.editor.x86_64.mono --headless --generate-mono-glue modules/mono/glue
 
-      # 3. Build GodotSharp Assemblies
+      # 3. I-compile ang GodotSharp Assemblies
       - name: Build GodotSharp Assemblies
         run: |
           python ./modules/mono/build_scripts/build_assemblies.py --godot-output-dir=./bin --precision=single
 
-      # 4. Compile Android Engine with Mono (ARM64)
-      - name: Compile Android Editor with C# (arm64)
+      # 4. I-compile ang Android Editor Engine (arm64)
+      - name: Compile Android Editor Engine (arm64)
         run: |
           scons platform=android target=editor arch=arm64 ${{ env.SCONS_FLAGS }} -j$(nproc)
 
-      # 5. Isama ang GodotSharp Assemblies sa Assets at i-configure ang Gradle
-      - name: Bundle GodotSharp inside Android Assets
+      # 5. Isama ang lahat ng GodotSharp Assemblies sa APK Assets
+      - name: Bundle GodotSharp Assemblies & Configs into Android Assets
         run: |
-          DEST_ASSETS="platform/android/java/editor/src/main/assets/GodotSharp"
-          mkdir -p "$DEST_ASSETS"
+          # Kopyahin ang mga nagawang GodotSharp assemblies sa assets
+          cp -rv bin/GodotSharp/* platform/android/java/editor/src/main/assets/GodotSharp/
 
-          if [ -d "bin/GodotSharp" ]; then
-            cp -rv bin/GodotSharp/* "$DEST_ASSETS/"
+          # I-configure ang Gradle para hindi i-compress ang mga DLLs, JSON, at SO
+          if [ -f platform/android/java/editor/build.gradle ]; then
+            printf "\nandroid {\n    aaptOptions {\n        noCompress 'dll', 'json', 'so'\n    }\n}\n" >> platform/android/java/editor/build.gradle
           fi
 
-          BUILD_GRADLE="platform/android/java/editor/build.gradle"
-          if [ -f "$BUILD_GRADLE" ]; then
-            if ! grep -q "noCompress" "$BUILD_GRADLE"; then
-              echo "" >> "$BUILD_GRADLE"
-              echo "android {" >> "$BUILD_GRADLE"
-              echo "    aaptOptions {" >> "$BUILD_GRADLE"
-              echo "        noCompress 'dll', 'json', 'so'" >> "$BUILD_GRADLE"
-              echo "    }" >> "$BUILD_GRADLE"
-              echo "}" >> "$BUILD_GRADLE"
-            fi
-          fi
+          echo "=== Verifying GodotSharp Assets Content ==="
+          ls -la platform/android/java/editor/src/main/assets/GodotSharp/
+          ls -la platform/android/java/editor/src/main/assets/GodotSharp/Api/ | head -n 20 || true
+          ls -la platform/android/java/editor/src/main/assets/GodotSharp/Tools/ || true
 
-          echo "=== Bundle Completed ==="
-          ls -la "$DEST_ASSETS/"
-
-      # 6. Generate All-in-One APK
+      # 6. Buuin ang All-In-One Android Editor APK
       - name: Generate Android Editor APK
         run: |
           cd platform/android/java
           ./gradlew generateGodotEditor
           cd ../../..
-          mkdir -p bin/android_editor_builds/
-          find platform/android/java/editor/build/outputs/apk/ -type f -name "*.apk" -exec cp -v {} bin/android_editor_builds/ \;
           ls -lh bin/android_editor_builds/
 
-      # 7. Upload Final Working APK
+      # 7. I-upload ang Final APK Artifact
       - name: Upload GEngine Android Editor APK
         uses: actions/upload-artifact@v4
         with:
