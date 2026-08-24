@@ -85,19 +85,24 @@ bool get_latest_fxr(const String &fxr_root, String &r_fxr_path) {
 	}
 	da->list_dir_end();
 
-	if (!found_ver) {
-		return false;
+	if (found_ver) {
+		String fxr_with_ver = Path::join(fxr_root, latest_ver_str);
+		String hostfxr_file_path = Path::join(fxr_with_ver, get_hostfxr_file_name());
+
+		if (FileAccess::exists(hostfxr_file_path)) {
+			r_fxr_path = hostfxr_file_path;
+			return true;
+		}
 	}
 
-	String fxr_with_ver = Path::join(fxr_root, latest_ver_str);
-	String hostfxr_file_path = Path::join(fxr_with_ver, get_hostfxr_file_name());
-
-	if (!FileAccess::exists(hostfxr_file_path)) {
-		return false;
+	// Fallback direct check kung direktang nasa fxr_root ang file
+	String direct_fxr = Path::join(fxr_root, get_hostfxr_file_name());
+	if (FileAccess::exists(direct_fxr)) {
+		r_fxr_path = direct_fxr;
+		return true;
 	}
 
-	r_fxr_path = hostfxr_file_path;
-	return true;
+	return false;
 }
 
 #ifdef WINDOWS_ENABLED
@@ -174,17 +179,20 @@ bool get_default_installation_dir(String &r_dotnet_root) {
 	Vector<String> probe_roots;
 	probe_roots.push_back("/storage/emulated/0/GEngine/dotnet");
 	probe_roots.push_back("/storage/emulated/0/GEngine/GodotSharp/dotnet");
-	probe_roots.push_back(OS::get_singleton()->get_user_data_dir().path_join("dotnet"));
-	probe_roots.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/dotnet"));
+	probe_roots.push_back("/storage/emulated/0/GEngine");
 
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	for (int i = 0; i < probe_roots.size(); i++) {
-		Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		if (da.is_valid() && da->dir_exists(probe_roots[i])) {
 			r_dotnet_root = probe_roots[i];
 			return true;
 		}
 	}
-	r_dotnet_root = OS::get_singleton()->get_user_data_dir().path_join("dotnet");
+
+	if (da.is_valid()) {
+		da->make_dir_recursive("/storage/emulated/0/GEngine/dotnet");
+	}
+	r_dotnet_root = "/storage/emulated/0/GEngine/dotnet";
 	return true;
 #else
 	r_dotnet_root = "/usr/share/dotnet";
@@ -241,6 +249,8 @@ bool get_dotnet_self_registered_dir(String &r_dotnet_root) {
 	r_dotnet_root = String::utf16((const char16_t *)buffer.ptr()).replace_char('\\', '/');
 	RegCloseKey(hkey);
 	return true;
+#elif defined(ANDROID_ENABLED) || defined(__ANDROID__)
+	return false;
 #else
 	String install_location_file = Path::join("/etc/dotnet", "install_location_" + get_dotnet_arch().to_lower());
 	if (get_install_location_from_file(install_location_file, r_dotnet_root)) {
@@ -296,10 +306,27 @@ bool get_dotnet_root_from_env(String &r_dotnet_root) {
 bool godotsharp::hostfxr_resolver::try_get_path_from_dotnet_root(const String &p_dotnet_root, String &r_fxr_path) {
 	String fxr_dir = Path::join(p_dotnet_root, "host", "fxr");
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	if (!da.is_valid() || !da->dir_exists(fxr_dir)) {
-		return false;
+	if (da.is_valid() && da->dir_exists(fxr_dir)) {
+		if (get_latest_fxr(fxr_dir, r_fxr_path)) {
+			return true;
+		}
 	}
-	return get_latest_fxr(fxr_dir, r_fxr_path);
+
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+	Vector<String> direct_candidates;
+	direct_candidates.push_back(Path::join(p_dotnet_root, get_hostfxr_file_name()));
+	direct_candidates.push_back("/storage/emulated/0/GEngine/GodotSharp/" + get_hostfxr_file_name());
+	direct_candidates.push_back("/storage/emulated/0/GEngine/" + get_hostfxr_file_name());
+
+	for (int i = 0; i < direct_candidates.size(); i++) {
+		if (FileAccess::exists(direct_candidates[i])) {
+			r_fxr_path = direct_candidates[i];
+			return true;
+		}
+	}
+#endif
+
+	return false;
 }
 
 bool godotsharp::hostfxr_resolver::try_get_path(String &r_dotnet_root, String &r_fxr_path) {
