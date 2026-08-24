@@ -2377,11 +2377,6 @@ const Variant CSharpScript::get_rpc_config() const {
 	return rpc_config;
 }
 
-Narito ang karugtong ng File 3 (csharp_script.cpp) pati na ang File 4
-(managed_callable.cpp) at File 5 (godotsharp_dirs.cpp):
-
-Karugtong ng File 3: modules/mono/csharp_script.cpp (Mula sa dulo)
-
 Error CSharpScript::load_source_code(const String &p_path) {
 	Error ferr = read_all_file_utf8(p_path, source);
 	ERR_FAIL_COND_V_MSG(ferr != OK, ferr,
