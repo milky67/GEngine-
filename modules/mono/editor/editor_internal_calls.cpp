@@ -90,31 +90,44 @@ void godot_icall_GodotSharpDirs_CSharpProjectName(godot_string *r_dest) {
 }
 
 void godot_icall_EditorProgress_Create(const godot_string *p_task, const godot_string *p_label, int32_t p_amount, bool p_can_cancel) {
-	String task = *reinterpret_cast<const String *>(p_task);
-	String label = *reinterpret_cast<const String *>(p_label);
-	EditorNode::progress_add_task(task, label, p_amount, (bool)p_can_cancel);
+	if (p_task && p_label) {
+		String task = *reinterpret_cast<const String *>(p_task);
+		String label = *reinterpret_cast<const String *>(p_label);
+		EditorNode::progress_add_task(task, label, p_amount, (bool)p_can_cancel);
+	}
 }
 
 void godot_icall_EditorProgress_Dispose(const godot_string *p_task) {
-	String task = *reinterpret_cast<const String *>(p_task);
-	EditorNode::progress_end_task(task);
+	if (p_task) {
+		String task = *reinterpret_cast<const String *>(p_task);
+		EditorNode::progress_end_task(task);
+	}
 }
 
 bool godot_icall_EditorProgress_Step(const godot_string *p_task, const godot_string *p_state, int32_t p_step, bool p_force_refresh) {
-	String task = *reinterpret_cast<const String *>(p_task);
-	String state = *reinterpret_cast<const String *>(p_state);
-	return EditorNode::progress_task_step(task, state, p_step, (bool)p_force_refresh);
+	if (p_task && p_state) {
+		String task = *reinterpret_cast<const String *>(p_task);
+		String state = *reinterpret_cast<const String *>(p_state);
+		return EditorNode::progress_task_step(task, state, p_step, (bool)p_force_refresh);
+	}
+	return false;
 }
 
 void godot_icall_Internal_FullExportTemplatesDir(godot_string *r_dest) {
-	String full_templates_dir = EditorPaths::get_singleton()->get_export_templates_dir().path_join(GODOT_VERSION_FULL_CONFIG);
+	String full_templates_dir = "";
+	if (EditorPaths::get_singleton()) {
+		full_templates_dir = EditorPaths::get_singleton()->get_export_templates_dir().path_join(GODOT_VERSION_FULL_CONFIG);
+	}
 	memnew_placement(r_dest, String(full_templates_dir));
 }
 
 bool godot_icall_Internal_IsMacOSAppBundleInstalled(const godot_string *p_bundle_id) {
 #ifdef MACOS_ENABLED
-	String bundle_id = *reinterpret_cast<const String *>(p_bundle_id);
-	return (bool)macos_is_app_bundle_installed(bundle_id);
+	if (p_bundle_id) {
+		String bundle_id = *reinterpret_cast<const String *>(p_bundle_id);
+		return (bool)macos_is_app_bundle_installed(bundle_id);
+	}
+	return false;
 #else
 	(void)p_bundle_id; // UNUSED
 	return (bool)false;
@@ -122,10 +135,13 @@ bool godot_icall_Internal_IsMacOSAppBundleInstalled(const godot_string *p_bundle
 }
 
 bool godot_icall_Internal_LipOCreateFile(const godot_string *p_output_path, const godot_packed_array *p_files) {
-	String output_path = *reinterpret_cast<const String *>(p_output_path);
-	PackedStringArray files = *reinterpret_cast<const PackedStringArray *>(p_files);
-	LipO lip;
-	return lip.create_file(output_path, files);
+	if (p_output_path && p_files) {
+		String output_path = *reinterpret_cast<const String *>(p_output_path);
+		PackedStringArray files = *reinterpret_cast<const PackedStringArray *>(p_files);
+		LipO lip;
+		return lip.create_file(output_path, files);
+	}
+	return false;
 }
 
 bool godot_icall_Internal_GodotIs32Bits() {
@@ -146,7 +162,10 @@ void godot_icall_Internal_GodotMainIteration() {
 
 bool godot_icall_Internal_IsAssembliesReloadingNeeded() {
 #ifdef GD_MONO_HOT_RELOAD
-	return (bool)CSharpLanguage::get_singleton()->is_assembly_reloading_needed();
+	if (CSharpLanguage::get_singleton()) {
+		return (bool)CSharpLanguage::get_singleton()->is_assembly_reloading_needed();
+	}
+	return false;
 #else
 	return (bool)false;
 #endif
@@ -154,33 +173,48 @@ bool godot_icall_Internal_IsAssembliesReloadingNeeded() {
 
 void godot_icall_Internal_ReloadAssemblies() {
 #ifdef GD_MONO_HOT_RELOAD
-	callable_mp(MonoBind::GodotSharp::get_singleton(), &MonoBind::GodotSharp::reload_assemblies).call_deferred();
+	if (MonoBind::GodotSharp::get_singleton()) {
+		callable_mp(MonoBind::GodotSharp::get_singleton(), &MonoBind::GodotSharp::reload_assemblies).call_deferred();
+	}
 #endif
 }
 
 void godot_icall_Internal_EditorDebuggerNodeReloadScripts() {
-	EditorDebuggerNode::get_singleton()->reload_all_scripts();
+	if (EditorDebuggerNode::get_singleton()) {
+		EditorDebuggerNode::get_singleton()->reload_all_scripts();
+	}
 }
 
 bool godot_icall_Internal_ScriptEditorEdit(Resource *p_resource, int32_t p_line, int32_t p_col, bool p_grab_focus) {
-	Ref<Resource> resource = p_resource;
-	return (bool)ScriptEditor::get_singleton()->edit(resource, p_line, p_col, (bool)p_grab_focus);
+	if (p_resource && ScriptEditor::get_singleton()) {
+		Ref<Resource> resource = p_resource;
+		return (bool)ScriptEditor::get_singleton()->edit(resource, p_line, p_col, (bool)p_grab_focus);
+	}
+	return false;
 }
 
 void godot_icall_Internal_EditorNodeShowScriptScreen() {
-	EditorNode::get_editor_main_screen()->select(EditorMainScreen::EDITOR_SCRIPT);
+	if (EditorNode::get_editor_main_screen()) {
+		EditorNode::get_editor_main_screen()->select(EditorMainScreen::EDITOR_SCRIPT);
+	}
 }
 
 void godot_icall_Internal_EditorRunPlay() {
-	EditorRunBar::get_singleton()->play_main_scene();
+	if (EditorRunBar::get_singleton()) {
+		EditorRunBar::get_singleton()->play_main_scene();
+	}
 }
 
 void godot_icall_Internal_EditorRunStop() {
-	EditorRunBar::get_singleton()->stop_playing();
+	if (EditorRunBar::get_singleton()) {
+		EditorRunBar::get_singleton()->stop_playing();
+	}
 }
 
 void godot_icall_Internal_EditorPlugin_AddControlToEditorRunBar(Control *p_control) {
-	EditorRunBar::get_singleton()->get_buttons_container()->add_child(p_control);
+	if (p_control && EditorRunBar::get_singleton() && EditorRunBar::get_singleton()->get_buttons_container()) {
+		EditorRunBar::get_singleton()->get_buttons_container()->add_child(p_control);
+	}
 }
 
 void godot_icall_Internal_ScriptEditorDebugger_ReloadScripts() {
@@ -191,7 +225,7 @@ void godot_icall_Internal_ScriptEditorDebugger_ReloadScripts() {
 }
 
 void godot_icall_Internal_CodeCompletionRequest(int32_t p_kind, const godot_string *p_script_file, godot_packed_array *r_ret) {
-	String script_file = *reinterpret_cast<const String *>(p_script_file);
+	String script_file = p_script_file ? *reinterpret_cast<const String *>(p_script_file) : String();
 	PackedStringArray suggestions = gdmono::get_code_completion((gdmono::CompletionKind)p_kind, script_file);
 	memnew_placement(r_ret, PackedStringArray(suggestions));
 }
@@ -201,51 +235,59 @@ float godot_icall_Globals_EditorScale() {
 }
 
 void godot_icall_Globals_GlobalDef(const godot_string *p_setting, const godot_variant *p_default_value, bool p_restart_if_changed, godot_variant *r_result) {
-	String setting = *reinterpret_cast<const String *>(p_setting);
-	Variant default_value = *reinterpret_cast<const Variant *>(p_default_value);
+	String setting = p_setting ? *reinterpret_cast<const String *>(p_setting) : String();
+	Variant default_value = p_default_value ? *reinterpret_cast<const Variant *>(p_default_value) : Variant();
 	Variant result = _GLOBAL_DEF(setting, default_value, (bool)p_restart_if_changed);
 	memnew_placement(r_result, Variant(result));
 }
 
 void godot_icall_Globals_EditorDef(const godot_string *p_setting, const godot_variant *p_default_value, bool p_restart_if_changed, godot_variant *r_result) {
-	String setting = *reinterpret_cast<const String *>(p_setting);
-	Variant default_value = *reinterpret_cast<const Variant *>(p_default_value);
+	String setting = p_setting ? *reinterpret_cast<const String *>(p_setting) : String();
+	Variant default_value = p_default_value ? *reinterpret_cast<const Variant *>(p_default_value) : Variant();
 	Variant result = _EDITOR_DEF(setting, default_value, (bool)p_restart_if_changed);
 	memnew_placement(r_result, Variant(result));
 }
 
 void godot_icall_Globals_EditorDefShortcut(const godot_string *p_setting, const godot_string *p_name, Key p_keycode, bool p_physical, godot_variant *r_result) {
-	String setting = *reinterpret_cast<const String *>(p_setting);
-	String name = *reinterpret_cast<const String *>(p_name);
+	String setting = p_setting ? *reinterpret_cast<const String *>(p_setting) : String();
+	String name = p_name ? *reinterpret_cast<const String *>(p_name) : String();
 	Ref<Shortcut> result = ED_SHORTCUT(setting, name, p_keycode, p_physical);
 	memnew_placement(r_result, Variant(result));
 }
 
 void godot_icall_Globals_EditorGetShortcut(const godot_string *p_setting, Ref<Shortcut> *r_result) {
-	String setting = *reinterpret_cast<const String *>(p_setting);
+	String setting = p_setting ? *reinterpret_cast<const String *>(p_setting) : String();
 	Ref<Shortcut> result = ED_GET_SHORTCUT(setting);
 	memnew_placement(r_result, Variant(result));
 }
 
 void godot_icall_Globals_EditorShortcutOverride(const godot_string *p_setting, const godot_string *p_feature, Key p_keycode, bool p_physical) {
-	String setting = *reinterpret_cast<const String *>(p_setting);
-	String feature = *reinterpret_cast<const String *>(p_feature);
-	ED_SHORTCUT_OVERRIDE(setting, feature, p_keycode, p_physical);
+	if (p_setting && p_feature) {
+		String setting = *reinterpret_cast<const String *>(p_setting);
+		String feature = *reinterpret_cast<const String *>(p_feature);
+		ED_SHORTCUT_OVERRIDE(setting, feature, p_keycode, p_physical);
+	}
 }
 
 void godot_icall_Globals_TTR(const godot_string *p_text, godot_string *r_dest) {
-	String text = *reinterpret_cast<const String *>(p_text);
+	String text = p_text ? *reinterpret_cast<const String *>(p_text) : String();
 	memnew_placement(r_dest, String(TTR(text)));
 }
 
 void godot_icall_Utils_OS_GetPlatformName(godot_string *r_dest) {
-	String os_name = OS::get_singleton()->get_name();
+	String os_name = OS::get_singleton() ? OS::get_singleton()->get_name() : String("Android");
 	memnew_placement(r_dest, String(os_name));
 }
 
 bool godot_icall_Utils_OS_UnixFileHasExecutableAccess(const godot_string *p_file_path) {
 #ifdef UNIX_ENABLED
+	if (!p_file_path) {
+		return false;
+	}
 	String file_path = *reinterpret_cast<const String *>(p_file_path);
+	if (file_path.is_empty()) {
+		return false;
+	}
 	return access(file_path.utf8().get_data(), X_OK) == 0;
 #else
 	ERR_FAIL_V(false);
