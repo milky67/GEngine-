@@ -81,18 +81,33 @@ const char_t *get_data(const HostFxrCharString &p_char_str) {
 }
 
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
-String ensure_file_extracted_to_storage(const String &p_res_path, const String &p_filename) {
-	String dest_dir = OS::get_singleton()->get_user_data_dir().path_join("GodotSharp_Extracted");
+const char *GENGINE_BASE = "/storage/emulated/0/GEngine";
+
+void ensure_gengine_dirs() {
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	if (da.is_valid() && da->dir_exists("/storage/emulated/0/GEngine")) {
-		dest_dir = "/storage/emulated/0/GEngine/GodotSharp_Extracted";
-	}
+	if (da.is_valid()) {
+		Vector<String> required_dirs;
+		required_dirs.push_back(GENGINE_BASE);
+		required_dirs.push_back(String(GENGINE_BASE).path_join("GodotSharp"));
+		required_dirs.push_back(String(GENGINE_BASE).path_join("GodotSharp/Api"));
+		required_dirs.push_back(String(GENGINE_BASE).path_join("GodotSharp/Tools"));
+		required_dirs.push_back(String(GENGINE_BASE).path_join("GodotSharp/Mono"));
+		required_dirs.push_back(String(GENGINE_BASE).path_join("GodotSharp_Extracted"));
+		required_dirs.push_back(String(GENGINE_BASE).path_join("dotnet"));
 
-	if (da.is_valid() && !da->dir_exists(dest_dir)) {
-		da->make_dir_recursive(dest_dir);
+		for (int i = 0; i < required_dirs.size(); i++) {
+			if (!da->dir_exists(required_dirs[i])) {
+				da->make_dir_recursive(required_dirs[i]);
+			}
+		}
 	}
+}
 
+String ensure_file_extracted_to_storage(const String &p_res_path, const String &p_filename) {
+	ensure_gengine_dirs();
+	String dest_dir = String(GENGINE_BASE).path_join("GodotSharp_Extracted");
 	String dest_path = dest_dir.path_join(p_filename);
+
 	if (FileAccess::exists(dest_path)) {
 		return dest_path;
 	}
@@ -104,6 +119,7 @@ String ensure_file_extracted_to_storage(const String &p_res_path, const String &
 			Ref<FileAccess> fa = FileAccess::open(dest_path, FileAccess::WRITE);
 			if (fa.is_valid()) {
 				fa->store_buffer(data.ptr(), data.size());
+				fa->flush();
 				fa->close();
 				return dest_path;
 			}
@@ -119,6 +135,7 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 	Vector<String> possible_roots;
 	possible_roots.push_back("/storage/emulated/0/GEngine/dotnet");
 	possible_roots.push_back("/storage/emulated/0/GEngine/GodotSharp/dotnet");
+	possible_roots.push_back("/storage/emulated/0/GEngine");
 	possible_roots.push_back(OS::get_singleton()->get_user_data_dir().path_join("dotnet"));
 
 	for (int i = 0; i < possible_roots.size(); i++) {
@@ -128,7 +145,8 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 			return true;
 		}
 	}
-	return false;
+	r_dotnet_root = "/storage/emulated/0/GEngine/dotnet";
+	return true;
 #else
 	String pipe;
 	List<String> args;
@@ -176,15 +194,11 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 
 String find_hostfxr() {
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
-	void *test_handle = nullptr;
-	if (OS::get_singleton()->open_dynamic_library("libhostfxr.so", test_handle) == OK) {
-		OS::get_singleton()->close_dynamic_library(test_handle);
-		return "libhostfxr.so";
-	}
-
+	ensure_gengine_dirs();
 	Vector<String> paths;
 	paths.push_back("/storage/emulated/0/GEngine/GodotSharp/libhostfxr.so");
 	paths.push_back("/storage/emulated/0/GEngine/libhostfxr.so");
+	paths.push_back("/storage/emulated/0/GEngine/dotnet/host/fxr/libhostfxr.so");
 	paths.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/libhostfxr.so"));
 	paths.push_back(GodotSharpDirs::get_api_assemblies_dir().path_join("libhostfxr.so"));
 
@@ -192,6 +206,12 @@ String find_hostfxr() {
 		if (FileAccess::exists(paths[i])) {
 			return paths[i];
 		}
+	}
+
+	void *test_handle = nullptr;
+	if (OS::get_singleton()->open_dynamic_library("libhostfxr.so", test_handle) == OK) {
+		OS::get_singleton()->close_dynamic_library(test_handle);
+		return "libhostfxr.so";
 	}
 	return String();
 #else
@@ -227,6 +247,19 @@ String find_hostfxr() {
 
 String find_monosgen() {
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+	ensure_gengine_dirs();
+	Vector<String> paths;
+	paths.push_back("/storage/emulated/0/GEngine/GodotSharp/libmonosgen-2.0.so");
+	paths.push_back("/storage/emulated/0/GEngine/libmonosgen-2.0.so");
+	paths.push_back("/storage/emulated/0/GEngine/GodotSharp/libmonosgen.so");
+	paths.push_back("/storage/emulated/0/GEngine/libmonosgen.so");
+
+	for (int i = 0; i < paths.size(); i++) {
+		if (FileAccess::exists(paths[i])) {
+			return paths[i];
+		}
+	}
+
 	void *test_handle = nullptr;
 	if (OS::get_singleton()->open_dynamic_library("libmonosgen-2.0.so", test_handle) == OK) {
 		OS::get_singleton()->close_dynamic_library(test_handle);
@@ -235,16 +268,6 @@ String find_monosgen() {
 	if (OS::get_singleton()->open_dynamic_library("libmonosgen.so", test_handle) == OK) {
 		OS::get_singleton()->close_dynamic_library(test_handle);
 		return "libmonosgen.so";
-	}
-
-	Vector<String> paths;
-	paths.push_back("/storage/emulated/0/GEngine/GodotSharp/libmonosgen-2.0.so");
-	paths.push_back("/storage/emulated/0/GEngine/libmonosgen-2.0.so");
-
-	for (int i = 0; i < paths.size(); i++) {
-		if (FileAccess::exists(paths[i])) {
-			return paths[i];
-		}
 	}
 	return String();
 #else
@@ -266,12 +289,7 @@ String find_monosgen() {
 
 String find_coreclr() {
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
-	void *test_handle = nullptr;
-	if (OS::get_singleton()->open_dynamic_library("libcoreclr.so", test_handle) == OK) {
-		OS::get_singleton()->close_dynamic_library(test_handle);
-		return "libcoreclr.so";
-	}
-
+	ensure_gengine_dirs();
 	Vector<String> paths;
 	paths.push_back("/storage/emulated/0/GEngine/GodotSharp/libcoreclr.so");
 	paths.push_back("/storage/emulated/0/GEngine/libcoreclr.so");
@@ -280,6 +298,12 @@ String find_coreclr() {
 		if (FileAccess::exists(paths[i])) {
 			return paths[i];
 		}
+	}
+
+	void *test_handle = nullptr;
+	if (OS::get_singleton()->open_dynamic_library("libcoreclr.so", test_handle) == OK) {
+		OS::get_singleton()->close_dynamic_library(test_handle);
+		return "libcoreclr.so";
 	}
 	return String();
 #else
@@ -321,8 +345,7 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
 	void *symbol = nullptr;
 
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "hostfxr_initialize_for_dotnet_command_line", symbol);
-	if (err != OK) return false;
-	hostfxr_initialize_for_dotnet_command_line = (hostfxr_initialize_for_dotnet_command_line_fn)symbol;
+	if (err == OK) hostfxr_initialize_for_dotnet_command_line = (hostfxr_initialize_for_dotnet_command_line_fn)symbol;
 
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "hostfxr_initialize_for_runtime_config", symbol);
 	if (err != OK) return false;
@@ -401,6 +424,10 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
 
 #ifdef TOOLS_ENABLED
 load_assembly_and_get_function_pointer_fn initialize_hostfxr_for_config(const char_t *p_config_path) {
+	if (!p_config_path || !hostfxr_initialize_for_runtime_config) {
+		return nullptr;
+	}
+
 	hostfxr_handle cxt = nullptr;
 	int rc = hostfxr_initialize_for_runtime_config(p_config_path, nullptr, &cxt);
 	if (rc != 0 || cxt == nullptr) {
@@ -420,6 +447,10 @@ load_assembly_and_get_function_pointer_fn initialize_hostfxr_for_config(const ch
 }
 #else
 load_assembly_and_get_function_pointer_fn initialize_hostfxr_self_contained(const char_t *p_main_assembly_path) {
+	if (!p_main_assembly_path || !hostfxr_initialize_for_dotnet_command_line) {
+		return nullptr;
+	}
+
 	hostfxr_handle cxt = nullptr;
 
 	List<String> cmdline_args = OS::get_singleton()->get_cmdline_args();
@@ -463,7 +494,6 @@ using godot_plugins_initialize_fn = bool (*)(void *, GDMonoCache::ManagedCallbac
 #ifdef TOOLS_ENABLED
 godot_plugins_initialize_fn initialize_hostfxr_and_godot_plugins(bool &r_runtime_initialized) {
 	godot_plugins_initialize_fn godot_plugins_initialize = nullptr;
-
 	String base_assemblies_dir = GodotSharpDirs::get_api_assemblies_dir();
 
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
@@ -528,7 +558,10 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
 #elif defined(MACOS_ENABLED) || defined(APPLE_EMBEDDED_ENABLED)
 	String native_aot_so_path = GodotSharpDirs::get_api_assemblies_dir().path_join(assembly_name + ".dylib");
 #elif defined(ANDROID_ENABLED) || defined(__ANDROID__)
-	String native_aot_so_path = "lib" + assembly_name + ".so";
+	String native_aot_so_path = "/storage/emulated/0/GEngine/GodotSharp/lib" + assembly_name + ".so";
+	if (!FileAccess::exists(native_aot_so_path)) {
+		native_aot_so_path = "lib" + assembly_name + ".so";
+	}
 #elif defined(UNIX_ENABLED)
 	String native_aot_so_path = GodotSharpDirs::get_api_assemblies_dir().path_join(assembly_name + ".so");
 #else
@@ -536,7 +569,7 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
 #endif
 
 	Error err = OS::get_singleton()->open_dynamic_library(native_aot_so_path, r_aot_dll_handle);
-	if (err != OK) return nullptr;
+	if (err != OK || r_aot_dll_handle == nullptr) return nullptr;
 
 	void *lib = r_aot_dll_handle;
 	void *symbol = nullptr;
@@ -548,12 +581,18 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
 
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p_assemblies_path, void *p_user_data) {
+	if (!p_assembly_name || !mono_assembly_name_get_name) {
+		return nullptr;
+	}
+
 	constexpr bool ref_only = false;
 	const char *name = mono_assembly_name_get_name(p_assembly_name);
-	const char *culture = mono_assembly_name_get_culture(p_assembly_name);
+	if (!name) return nullptr;
+
+	const char *culture = mono_assembly_name_get_culture ? mono_assembly_name_get_culture(p_assembly_name) : nullptr;
 
 	String assembly_name;
-	if (culture && strcmp(culture, "")) {
+	if (culture && strcmp(culture, "") != 0) {
 		assembly_name += culture;
 		assembly_name += "/";
 	}
@@ -566,6 +605,8 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
 	probe_locations.push_back("/storage/emulated/0/GEngine/GodotSharp/Api");
 	probe_locations.push_back("/storage/emulated/0/GEngine/GodotSharp/Tools");
 	probe_locations.push_back("/storage/emulated/0/GEngine/GodotSharp/Mono");
+	probe_locations.push_back("/storage/emulated/0/GEngine/GodotSharp_Extracted");
+	probe_locations.push_back("/storage/emulated/0/GEngine");
 	probe_locations.push_back(GodotSharpDirs::get_api_assemblies_dir());
 	probe_locations.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Api"));
 
@@ -583,7 +624,9 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
 	}
 
 	Vector<uint8_t> data = FileAccess::get_file_as_bytes(found_path);
-	if (data.is_empty()) return nullptr;
+	if (data.is_empty() || !mono_image_open_from_data_with_name || !mono_assembly_load_from_full) {
+		return nullptr;
+	}
 
 	MonoImageOpenStatus status = MONO_IMAGE_OK;
 	MonoImage *image = mono_image_open_from_data_with_name(
@@ -618,8 +661,16 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
 
 	void *coreclr_handle = nullptr;
 	unsigned int domain_id = 0;
+
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+	const char *app_path = "/storage/emulated/0/GEngine";
+	const char *domain_name = "GodotEngineDomain";
+	int rc = coreclr_initialize(app_path, domain_name, 0, nullptr, nullptr, &coreclr_handle, &domain_id);
+#else
 	int rc = coreclr_initialize(nullptr, nullptr, 0, nullptr, nullptr, &coreclr_handle, &domain_id);
-	if (rc != 0) return nullptr;
+#endif
+
+	if (rc != 0 || coreclr_handle == nullptr) return nullptr;
 
 	r_runtime_initialized = true;
 
@@ -668,24 +719,27 @@ void GDMono::initialize() {
 	_init_godot_api_hashes();
 
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
-	String user_dir = OS::get_singleton()->get_user_data_dir();
-	setenv("TMPDIR", user_dir.utf8().get_data(), 1);
-	setenv("HOME", user_dir.utf8().get_data(), 1);
+	ensure_gengine_dirs();
+
+	setenv("TMPDIR", "/storage/emulated/0/GEngine", 1);
+	setenv("HOME", "/storage/emulated/0/GEngine", 1);
+	setenv("DOTNET_ROOT", "/storage/emulated/0/GEngine/dotnet", 1);
+	setenv("DOTNET_BUNDLE_EXTRACT_BASE_DIR", "/storage/emulated/0/GEngine/GodotSharp_Extracted", 1);
 	setenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1", 1);
 
-	// Setup MONO_PATH papuntang /storage/emulated/0/GEngine/ at user app data
+	// MONO_PATH priority /storage/emulated/0/GEngine/
 	String mono_paths = "/storage/emulated/0/GEngine/GodotSharp/Tools:"
 						"/storage/emulated/0/GEngine/GodotSharp/Api:"
-						"/storage/emulated/0/GEngine/GodotSharp/Mono:" +
-						user_dir.path_join("GodotSharp/Tools:") +
-						user_dir.path_join("GodotSharp/Api");
+						"/storage/emulated/0/GEngine/GodotSharp/Mono:"
+						"/storage/emulated/0/GEngine/GodotSharp_Extracted:"
+						"/storage/emulated/0/GEngine";
 	setenv("MONO_PATH", mono_paths.utf8().get_data(), 1);
 #endif
 
 	godot_plugins_initialize_fn godot_plugins_initialize = nullptr;
 
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
-	// SA ANDROID: Mono SGen VM ang priority
+	// Priority sa Android: Mono VM / CoreCLR library mula sa /storage/emulated/0/GEngine/
 	if (load_coreclr(coreclr_dll_handle)) {
 		godot_plugins_initialize = initialize_coreclr_and_godot_plugins(runtime_initialized);
 	}
@@ -716,7 +770,7 @@ void GDMono::initialize() {
 		}
 	}
 
-	// KUNG HINDI PA KAILANGAN NG RUNTIME (SA PROJECT MANAGER): Ligtas na mag-patuloy
+	// Project Manager safety fallback (hindi magka-crash kung UI lang ang binubuksan)
 	if (godot_plugins_initialize == nullptr) {
 		print_line(".NET/GEngine: Standalone mode ready. Project Manager UI loaded without crash.");
 		initialized = true;
