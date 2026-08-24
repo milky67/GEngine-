@@ -1,10 +1,6 @@
 /**************************************************************************/
 /* gd_mono.cpp                                                            */
 /**************************************************************************/
-/* This file is part of:                                                  */
-/* GODOT ENGINE                                                           */
-/* https://godotengine.org                                                */
-/**************************************************************************/
 
 #include "gd_mono.h"
 
@@ -85,7 +81,6 @@ const char_t *get_data(const HostFxrCharString &p_char_str) {
 }
 
 #ifdef ANDROID_ENABLED
-// Kinokopya ang assets papuntang internal storage para mabasa ng C++ native APIs
 String ensure_file_extracted_to_storage(const String &p_res_path, const String &p_filename) {
 	String dest_dir = OS::get_singleton()->get_user_data_dir().path_join("GodotSharp_Extracted");
 	DirAccess::make_dir_recursive_absolute(dest_dir);
@@ -122,7 +117,6 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 	for (const String &path : possible_roots) {
 		if (DirAccess::exists(path)) {
 			r_dotnet_root = path;
-			print_verbose(".NET: Found Android dotnet root at: " + r_dotnet_root);
 			return true;
 		}
 	}
@@ -149,12 +143,10 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 
 		godotsharp::SemVer version;
 		if (!sem_ver_parser.parse(version_string, version)) {
-			WARN_PRINT("Unable to parse .NET SDK version '" + version_string + "'.");
 			continue;
 		}
 
 		if (!DirAccess::exists(path)) {
-			WARN_PRINT("Found .NET SDK version '" + version_string + "' with invalid path '" + path + "'.");
 			continue;
 		}
 
@@ -165,7 +157,6 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 	}
 
 	if (!latest_sdk_path.is_empty()) {
-		print_verbose("Found .NET SDK at " + latest_sdk_path);
 		r_dotnet_root = latest_sdk_path.path_join("..").simplify_path();
 		return true;
 	}
