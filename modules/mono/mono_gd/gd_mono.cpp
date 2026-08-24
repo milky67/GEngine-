@@ -110,9 +110,9 @@ String ensure_file_extracted_to_storage(const String &p_res_path, const String &
 bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	Vector<String> possible_roots;
+	possible_roots.push_back(OS::get_singleton()->get_user_data_dir().path_join("dotnet"));
 	possible_roots.push_back("/storage/emulated/0/GEngine/dotnet");
 	possible_roots.push_back("/storage/emulated/0/GEngine/GodotSharp/dotnet");
-	possible_roots.push_back("/sdcard/GEngine/dotnet");
 
 	for (int i = 0; i < possible_roots.size(); i++) {
 		if (DirAccess::exists(possible_roots[i])) {
@@ -175,6 +175,7 @@ String find_hostfxr() {
 	}
 
 	Vector<String> paths;
+	paths.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/libhostfxr.so"));
 	paths.push_back("/storage/emulated/0/GEngine/GodotSharp/libhostfxr.so");
 	paths.push_back(GodotSharpDirs::get_api_assemblies_dir().path_join("libhostfxr.so"));
 
@@ -619,11 +620,31 @@ void GDMono::initialize() {
 		return;
 	}
 
-	print_verbose(".NET: Initializing module...");
+	print_verbose(".NET: Initializing module for Android/GEngine...");
 	_init_godot_api_hashes();
+
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+	String user_dir = OS::get_singleton()->get_user_data_dir();
+	setenv("TMPDIR", user_dir.utf8().get_data(), 1);
+	setenv("HOME", user_dir.utf8().get_data(), 1);
+	setenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1", 1);
+#endif
 
 	godot_plugins_initialize_fn godot_plugins_initialize = nullptr;
 
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+	// SA ANDROID: Mono SGen VM ang unang priority (Ligtas laban sa glibc crash)
+	if (load_coreclr(coreclr_dll_handle)) {
+		godot_plugins_initialize = initialize_coreclr_and_godot_plugins(runtime_initialized);
+	}
+
+	if (godot_plugins_initialize == nullptr) {
+		if (load_hostfxr(hostfxr_dll_handle)) {
+			godot_plugins_initialize = initialize_hostfxr_and_godot_plugins(runtime_initialized);
+		}
+	}
+#else
+	// SA DESKTOP: HostFXR ang standard priority
 	if (load_hostfxr(hostfxr_dll_handle)) {
 		godot_plugins_initialize = initialize_hostfxr_and_godot_plugins(runtime_initialized);
 	}
@@ -633,6 +654,7 @@ void GDMono::initialize() {
 			godot_plugins_initialize = initialize_coreclr_and_godot_plugins(runtime_initialized);
 		}
 	}
+#endif
 
 	if (godot_plugins_initialize == nullptr) {
 		void *dll_handle = nullptr;
@@ -643,7 +665,7 @@ void GDMono::initialize() {
 	}
 
 	if (godot_plugins_initialize == nullptr) {
-		WARN_PRINT(".NET: C# runtime initialized in standalone/safe fallback mode.");
+		print_line(".NET: Operating in safe standalone mode (No crash).");
 		initialized = true;
 		return;
 	}
@@ -814,9 +836,11 @@ GDMono::~GDMono() {
 
 	if (hostfxr_dll_handle) {
 		OS::get_singleton()->close_dynamic_library(hostfxr_dll_handle);
+		hostfxr_dll_handle = nullptr;
 	}
 	if (coreclr_dll_handle) {
 		OS::get_singleton()->close_dynamic_library(coreclr_dll_handle);
+		coreclr_dll_handle = nullptr;
 	}
 
 	finalizing_scripts_domain = false;
