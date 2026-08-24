@@ -28,36 +28,6 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-/*
-Adapted to Godot from the nethost library: https://github.com/dotnet/runtime/tree/main/src/native/corehost
-*/
-
-/*
-The MIT License (MIT)
-
-Copyright (c) .NET Foundation and Contributors
-
-All rights reserved.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
-
 #include "hostfxr_resolver.h"
 
 #include "../utils/path_utils.h"
@@ -71,10 +41,6 @@ SOFTWARE.
 #ifdef WINDOWS_ENABLED
 #include <windows.h>
 #endif
-
-// We don't use libnethost as it gives us issues with some compilers.
-// This file tries to mimic libnethost's hostfxr_resolver search logic. We try to use the
-// same function names for easier comparing in case we need to update this in the future.
 
 namespace {
 
@@ -96,6 +62,10 @@ bool get_latest_fxr(const String &fxr_root, String &r_fxr_path) {
 	String latest_ver_str;
 
 	Ref<DirAccess> da = DirAccess::open(fxr_root);
+	if (da.is_null()) {
+		return false;
+	}
+
 	da->list_dir_begin();
 	for (String dir = da->get_next(); !dir.is_empty(); dir = da->get_next()) {
 		if (!da->current_is_dir() || dir == "." || dir == "..") {
@@ -113,6 +83,7 @@ bool get_latest_fxr(const String &fxr_root, String &r_fxr_path) {
 			}
 		}
 	}
+	da->list_dir_end();
 
 	if (!found_ver) {
 		return false;
@@ -121,10 +92,11 @@ bool get_latest_fxr(const String &fxr_root, String &r_fxr_path) {
 	String fxr_with_ver = Path::join(fxr_root, latest_ver_str);
 	String hostfxr_file_path = Path::join(fxr_with_ver, get_hostfxr_file_name());
 
-	ERR_FAIL_COND_V_MSG(!FileAccess::exists(hostfxr_file_path), false, "Missing hostfxr library in directory: " + fxr_with_ver);
+	if (!FileAccess::exists(hostfxr_file_path)) {
+		return false;
+	}
 
 	r_fxr_path = hostfxr_file_path;
-
 	return true;
 }
 
@@ -165,7 +137,6 @@ bool get_default_installation_dir(String &r_dotnet_root) {
 #if defined(WINDOWS_ENABLED)
 	String program_files_env;
 	if (is_wow64()) {
-		// Running x86 on x64, looking for x86 install
 		program_files_env = "ProgramFiles(x86)";
 	} else {
 		program_files_env = "ProgramFiles";
@@ -178,7 +149,6 @@ bool get_default_installation_dir(String &r_dotnet_root) {
 	}
 
 #if defined(__x86_64) || defined(__x86_64__) || defined(__amd64__) || defined(_M_X64)
-	// When emulating x64 on arm
 	String dotnet_root_emulated = Path::join(program_files_dir, "dotnet", "x64");
 	if (FileAccess::exists(Path::join(dotnet_root_emulated, "dotnet.exe"))) {
 		r_dotnet_root = dotnet_root_emulated;
@@ -192,7 +162,6 @@ bool get_default_installation_dir(String &r_dotnet_root) {
 	r_dotnet_root = "/usr/local/share/dotnet";
 
 #if defined(__x86_64) || defined(__x86_64__) || defined(__amd64__) || defined(_M_X64)
-	// When emulating x64 on arm
 	String dotnet_root_emulated = Path::join(r_dotnet_root, "x64");
 	if (FileAccess::exists(Path::join(dotnet_root_emulated, "dotnet"))) {
 		r_dotnet_root = dotnet_root_emulated;
@@ -200,6 +169,22 @@ bool get_default_installation_dir(String &r_dotnet_root) {
 	}
 #endif
 
+	return true;
+#elif defined(ANDROID_ENABLED) || defined(__ANDROID__)
+	Vector<String> probe_roots;
+	probe_roots.push_back("/storage/emulated/0/GEngine/dotnet");
+	probe_roots.push_back("/storage/emulated/0/GEngine/GodotSharp/dotnet");
+	probe_roots.push_back(OS::get_singleton()->get_user_data_dir().path_join("dotnet"));
+	probe_roots.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/dotnet"));
+
+	for (int i = 0; i < probe_roots.size(); i++) {
+		Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (da.is_valid() && da->dir_exists(probe_roots[i])) {
+			r_dotnet_root = probe_roots[i];
+			return true;
+		}
+	}
+	r_dotnet_root = OS::get_singleton()->get_user_data_dir().path_join("dotnet");
 	return true;
 #else
 	r_dotnet_root = "/usr/share/dotnet";
@@ -263,7 +248,6 @@ bool get_dotnet_self_registered_dir(String &r_dotnet_root) {
 	}
 
 	if (FileAccess::exists(install_location_file)) {
-		// Don't try with the legacy location, this will fall back to the hard-coded default install location
 		return false;
 	}
 
@@ -278,7 +262,8 @@ bool get_file_path_from_env(const String &p_env_key, String &r_dotnet_root) {
 	if (!env_value.is_empty()) {
 		env_value = Path::realpath(env_value);
 
-		if (DirAccess::exists(env_value)) {
+		Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (da.is_valid() && da->dir_exists(env_value)) {
 			r_dotnet_root = env_value;
 			return true;
 		}
@@ -292,31 +277,26 @@ bool get_dotnet_root_from_env(String &r_dotnet_root) {
 	String arch_for_env = get_dotnet_arch();
 
 	if (!arch_for_env.is_empty()) {
-		// DOTNET_ROOT_<arch>
 		if (get_file_path_from_env(dotnet_root_env + "_" + arch_for_env.to_upper(), r_dotnet_root)) {
 			return true;
 		}
 	}
 
 #ifdef WINDOWS_ENABLED
-	// WoW64-only: DOTNET_ROOT(x86)
 	if (is_wow64() && get_file_path_from_env("DOTNET_ROOT(x86)", r_dotnet_root)) {
 		return true;
 	}
 #endif
 
-	// DOTNET_ROOT
 	return get_file_path_from_env(dotnet_root_env, r_dotnet_root);
 }
 
-} //namespace
+} // namespace
 
 bool godotsharp::hostfxr_resolver::try_get_path_from_dotnet_root(const String &p_dotnet_root, String &r_fxr_path) {
 	String fxr_dir = Path::join(p_dotnet_root, "host", "fxr");
-	if (!DirAccess::exists(fxr_dir)) {
-		if (OS::get_singleton()->is_stdout_verbose()) {
-			ERR_PRINT("The host fxr folder does not exist: " + fxr_dir + ".");
-		}
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (!da.is_valid() || !da->dir_exists(fxr_dir)) {
 		return false;
 	}
 	return get_latest_fxr(fxr_dir, r_fxr_path);
