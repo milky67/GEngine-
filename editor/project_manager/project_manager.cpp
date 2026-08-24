@@ -488,11 +488,9 @@ void ProjectManager::_run_project_confirm() {
 			continue;
 		}
 
-		const String &path = selected_list[i].path;
-
-		if (!DirAccess::exists(path.path_join(ProjectSettings::get_singleton()->get_imported_files_path().substr(6)))) {
-			_show_error(TTRC("Can't run project: Assets need to be imported first.\nPlease edit the project to trigger the initial import."));
-			continue;
+		String path = selected_list[i].path;
+		if (ProjectSettings::get_singleton()) {
+			path = ProjectSettings::get_singleton()->globalize_path(path);
 		}
 
 		print_line("Running project: " + path);
@@ -521,7 +519,17 @@ void ProjectManager::_open_selected_projects() {
 	loading_label->show();
 
 	const HashSet<String> &selected_list = project_list->get_selected_project_keys();
-	for (const String &path : selected_list) {
+	if (selected_list.is_empty()) {
+		loading_label->hide();
+		return;
+	}
+
+	for (const String &raw_path : selected_list) {
+		String path = raw_path;
+		if (ProjectSettings::get_singleton()) {
+			path = ProjectSettings::get_singleton()->globalize_path(raw_path);
+		}
+
 		String conf = path.path_join("project.godot");
 
 		if (!FileAccess::exists(conf)) {
@@ -553,7 +561,7 @@ void ProjectManager::_open_selected_projects() {
 
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 		args.push_back("--verbose");
-		print_line(".NET/Android: Switching into Editor mode for C# project...");
+		print_line(".NET/Android: Switching into Editor mode for C# project: " + path);
 		OS::get_singleton()->set_restart_on_exit(true, args);
 		project_list->project_opening_initiated = true;
 		_dim_window();
@@ -584,20 +592,20 @@ void ProjectManager::_open_selected_projects() {
 }
 
 void ProjectManager::_open_selected_projects_check_warnings() {
-	const HashSet<String> &selected_list = project_list->get_selected_project_keys();
-	if (selected_list.size() < 1) {
+	Vector<ProjectList::Item> selected_projects = project_list->get_selected_projects();
+	if (selected_projects.is_empty()) {
 		return;
 	}
 
 	const Size2i popup_min_size = Size2i(400.0 * EDSCALE, 0);
 
-	if (selected_list.size() > 1) {
-		multi_open_ask->set_text(vformat(TTR("You requested to open %d projects in parallel. Do you confirm?\nNote that usual checks for engine version compatibility will be bypassed."), selected_list.size()));
+	if (selected_projects.size() > 1) {
+		multi_open_ask->set_text(vformat(TTR("You requested to open %d projects in parallel. Do you confirm?\nNote that usual checks for engine version compatibility will be bypassed."), selected_projects.size()));
 		multi_open_ask->popup_centered(popup_min_size);
 		return;
 	}
 
-	ProjectList::Item project = project_list->get_selected_projects()[0];
+	ProjectList::Item project = selected_projects[0];
 	if (project.missing) {
 		return;
 	}
@@ -655,7 +663,7 @@ void ProjectManager::_open_selected_projects_check_warnings() {
 				i--;
 			} else if (ProjectList::project_feature_looks_like_version(feature)) {
 				ask_update_backup->show();
-				if (project.control->is_older_version()) {
+				if (project.control && project.control->is_older_version()) {
 					ask_upgrade_tool->show();
 					migration_guide_button->show();
 				}
@@ -703,7 +711,12 @@ void ProjectManager::_open_selected_projects_check_recovery_mode() {
 }
 
 void ProjectManager::_open_selected_projects_with_migration() {
-	if (ask_update_backup->is_pressed() && project_list->get_selected_projects().size() == 1) {
+	Vector<ProjectList::Item> selected_projects = project_list->get_selected_projects();
+	if (selected_projects.is_empty()) {
+		return;
+	}
+
+	if (ask_update_backup->is_pressed() && selected_projects.size() == 1) {
 		ask_update_settings->hide();
 		ask_update_backup->set_pressed(false);
 		_duplicate_project_with_action(POST_DUPLICATE_ACTION_OPEN);
@@ -711,7 +724,7 @@ void ProjectManager::_open_selected_projects_with_migration() {
 	}
 
 #ifndef DISABLE_DEPRECATED
-	if (project_list->get_selected_projects().size() == 1) {
+	if (selected_projects.size() == 1) {
 		_minor_project_migrate();
 	}
 #endif
@@ -911,7 +924,10 @@ void ProjectManager::_on_project_created(const String &dir, bool edit) {
 	search_box->clear();
 
 	int i = project_list->refresh_project(dir);
-	project_list->ensure_project_visible(i);
+	if (i != -1) {
+		project_list->select_project(i);
+		project_list->ensure_project_visible(i);
+	}
 	_update_list_placeholder();
 
 	if (edit) {
@@ -962,11 +978,16 @@ LineEdit *ProjectManager::get_search_box() {
 }
 
 void ProjectManager::_manage_project_tags() {
+	Vector<ProjectList::Item> selected_list = project_list->get_selected_projects();
+	if (selected_list.is_empty()) {
+		return;
+	}
+
 	for (int i = 0; i < project_tags->get_child_count(); i++) {
 		project_tags->get_child(i)->queue_free();
 	}
 
-	const ProjectList::Item item = project_list->get_selected_projects()[0];
+	const ProjectList::Item item = selected_list[0];
 	current_project_tags = item.tags;
 	for (const String &tag : current_project_tags) {
 		ProjectTag *tag_control = memnew(ProjectTag(tag, true));
@@ -1001,6 +1022,11 @@ void ProjectManager::_delete_project_tag(const String &p_tag) {
 }
 
 void ProjectManager::_apply_project_tags() {
+	Vector<ProjectList::Item> selected_list = project_list->get_selected_projects();
+	if (selected_list.is_empty()) {
+		return;
+	}
+
 	PackedStringArray tags;
 	for (int i = 0; i < project_tags->get_child_count(); i++) {
 		ProjectTag *tag_control = Object::cast_to<ProjectTag>(project_tags->get_child(i));
@@ -1009,7 +1035,7 @@ void ProjectManager::_apply_project_tags() {
 		}
 	}
 
-	const String project_godot = project_list->get_selected_projects()[0].path.path_join("project.godot");
+	const String project_godot = selected_list[0].path.path_join("project.godot");
 	ProjectSettings *cfg = memnew(ProjectSettings(project_godot));
 	if (!cfg->is_project_loaded()) {
 		memdelete(cfg);
@@ -1093,7 +1119,12 @@ void ProjectManager::add_new_tag(const String &p_tag) {
 
 #ifndef DISABLE_DEPRECATED
 void ProjectManager::_minor_project_migrate() {
-	const ProjectList::Item migrated_project = project_list->get_selected_projects()[0];
+	Vector<ProjectList::Item> selected_projects = project_list->get_selected_projects();
+	if (selected_projects.is_empty()) {
+		return;
+	}
+
+	const ProjectList::Item migrated_project = selected_projects[0];
 
 	if (version_convert_feature.begins_with("4.3")) {
 		const float edscale = EDSCALE;
@@ -1142,7 +1173,10 @@ void ProjectManager::_perform_full_project_conversion() {
 		return;
 	}
 
-	const String &path = selected_list[0].path;
+	String path = selected_list[0].path;
+	if (ProjectSettings::get_singleton()) {
+		path = ProjectSettings::get_singleton()->globalize_path(path);
+	}
 
 	print_line("Converting project: " + path);
 	List<String> args;
@@ -1886,7 +1920,6 @@ ProjectManager::ProjectManager() {
 		Ref<DirAccess> dir_access = DirAccess::create(DirAccess::AccessType::ACCESS_FILESYSTEM);
 
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
-		// Tiyaking laging nag-eexist ang GEngine storage hierarchy
 		if (dir_access.is_valid()) {
 			if (!dir_access->dir_exists("/storage/emulated/0/GEngine")) {
 				dir_access->make_dir_recursive("/storage/emulated/0/GEngine");
