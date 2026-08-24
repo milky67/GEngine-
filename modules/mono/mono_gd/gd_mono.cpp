@@ -82,11 +82,10 @@ const char_t *get_data(const HostFxrCharString &p_char_str) {
 
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 String ensure_file_extracted_to_storage(const String &p_res_path, const String &p_filename) {
-	// Subukan muna sa GEngine external storage kung may permission
-	String dest_dir = "/storage/emulated/0/GEngine/GodotSharp_Extracted";
+	String dest_dir = OS::get_singleton()->get_user_data_dir().path_join("GodotSharp_Extracted");
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	if (!da.is_valid() || !da->dir_exists("/storage/emulated/0/GEngine")) {
-		dest_dir = OS::get_singleton()->get_user_data_dir().path_join("GodotSharp_Extracted");
+	if (da.is_valid() && da->dir_exists("/storage/emulated/0/GEngine")) {
+		dest_dir = "/storage/emulated/0/GEngine/GodotSharp_Extracted";
 	}
 
 	if (da.is_valid() && !da->dir_exists(dest_dir)) {
@@ -566,6 +565,7 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
 	Vector<String> probe_locations;
 	probe_locations.push_back("/storage/emulated/0/GEngine/GodotSharp/Api");
 	probe_locations.push_back("/storage/emulated/0/GEngine/GodotSharp/Tools");
+	probe_locations.push_back("/storage/emulated/0/GEngine/GodotSharp/Mono");
 	probe_locations.push_back(GodotSharpDirs::get_api_assemblies_dir());
 	probe_locations.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Api"));
 
