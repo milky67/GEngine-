@@ -31,7 +31,7 @@
 #include <dlfcn.h>
 #endif
 
-#if defined(ANDROID_ENABLED)
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 #include "../thirdparty/mono_delegates.h"
 #endif
 
@@ -50,7 +50,7 @@ typedef int(CORECLR_DELEGATE_CALLTYPE *coreclr_initialize_fn)(const char *exePat
 coreclr_create_delegate_fn coreclr_create_delegate = nullptr;
 coreclr_initialize_fn coreclr_initialize = nullptr;
 
-#ifdef ANDROID_ENABLED
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 mono_install_assembly_preload_hook_fn mono_install_assembly_preload_hook = nullptr;
 mono_assembly_name_get_name_fn mono_assembly_name_get_name = nullptr;
 mono_assembly_name_get_culture_fn mono_assembly_name_get_culture = nullptr;
@@ -80,7 +80,7 @@ const char_t *get_data(const HostFxrCharString &p_char_str) {
 	return (const char_t *)p_char_str.get_data();
 }
 
-#ifdef ANDROID_ENABLED
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 String ensure_file_extracted_to_storage(const String &p_res_path, const String &p_filename) {
 	String dest_dir = OS::get_singleton()->get_user_data_dir().path_join("GodotSharp_Extracted");
 	DirAccess::make_dir_recursive_absolute(dest_dir);
@@ -108,15 +108,15 @@ String ensure_file_extracted_to_storage(const String &p_res_path, const String &
 
 #ifdef TOOLS_ENABLED
 bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
-#if defined(ANDROID_ENABLED)
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	Vector<String> possible_roots;
 	possible_roots.push_back("/storage/emulated/0/GEngine/dotnet");
 	possible_roots.push_back("/storage/emulated/0/GEngine/GodotSharp/dotnet");
 	possible_roots.push_back("/sdcard/GEngine/dotnet");
 
-	for (const String &path : possible_roots) {
-		if (DirAccess::exists(path)) {
-			r_dotnet_root = path;
+	for (int i = 0; i < possible_roots.size(); i++) {
+		if (DirAccess::exists(possible_roots[i])) {
+			r_dotnet_root = possible_roots[i];
 			return true;
 		}
 	}
@@ -167,11 +167,21 @@ bool try_get_dotnet_root_from_command_line(String &r_dotnet_root) {
 #endif
 
 String find_hostfxr() {
-#if defined(ANDROID_ENABLED)
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	void *test_handle = nullptr;
 	if (OS::get_singleton()->open_dynamic_library("libhostfxr.so", test_handle) == OK) {
 		OS::get_singleton()->close_dynamic_library(test_handle);
 		return "libhostfxr.so";
+	}
+
+	Vector<String> paths;
+	paths.push_back("/storage/emulated/0/GEngine/GodotSharp/libhostfxr.so");
+	paths.push_back(GodotSharpDirs::get_api_assemblies_dir().path_join("libhostfxr.so"));
+
+	for (int i = 0; i < paths.size(); i++) {
+		if (FileAccess::exists(paths[i])) {
+			return paths[i];
+		}
 	}
 	return String();
 #else
@@ -206,7 +216,7 @@ String find_hostfxr() {
 }
 
 String find_monosgen() {
-#if defined(ANDROID_ENABLED)
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	void *test_handle = nullptr;
 	if (OS::get_singleton()->open_dynamic_library("libmonosgen-2.0.so", test_handle) == OK) {
 		OS::get_singleton()->close_dynamic_library(test_handle);
@@ -235,7 +245,7 @@ String find_monosgen() {
 }
 
 String find_coreclr() {
-#if defined(ANDROID_ENABLED)
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	void *test_handle = nullptr;
 	if (OS::get_singleton()->open_dynamic_library("libcoreclr.so", test_handle) == OK) {
 		OS::get_singleton()->close_dynamic_library(test_handle);
@@ -260,7 +270,7 @@ String find_coreclr() {
 }
 
 bool load_hostfxr(void *&r_hostfxr_dll_handle) {
-#if defined(ANDROID_ENABLED)
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	void *dl_handle = nullptr;
 	OS::get_singleton()->open_dynamic_library("libdl.so", dl_handle);
 	void *cxx_handle = nullptr;
@@ -302,7 +312,7 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
 }
 
 bool load_coreclr(void *&r_coreclr_dll_handle) {
-#if defined(ANDROID_ENABLED)
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	void *sys_dl_handle = nullptr;
 	OS::get_singleton()->open_dynamic_library("libdl.so", sys_dl_handle);
 	void *sys_cpp_handle = nullptr;
@@ -339,7 +349,7 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
 		coreclr_create_delegate = (coreclr_create_delegate_fn)symbol;
 	}
 
-#ifdef ANDROID_ENABLED
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "mono_install_assembly_preload_hook", symbol);
 	if (err == OK) mono_install_assembly_preload_hook = (mono_install_assembly_preload_hook_fn)symbol;
 
@@ -426,7 +436,7 @@ godot_plugins_initialize_fn initialize_hostfxr_and_godot_plugins(bool &r_runtime
 
 	String base_assemblies_dir = GodotSharpDirs::get_api_assemblies_dir();
 
-#if defined(ANDROID_ENABLED)
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	String extracted_dll = ensure_file_extracted_to_storage(base_assemblies_dir, "GodotPlugins.dll");
 	String extracted_json = ensure_file_extracted_to_storage(base_assemblies_dir, "GodotPlugins.runtimeconfig.json");
 	HostFxrCharString godot_plugins_path = str_to_hostfxr(extracted_dll);
@@ -487,7 +497,7 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
 	String native_aot_so_path = GodotSharpDirs::get_api_assemblies_dir().path_join(assembly_name + ".dll");
 #elif defined(MACOS_ENABLED) || defined(APPLE_EMBEDDED_ENABLED)
 	String native_aot_so_path = GodotSharpDirs::get_api_assemblies_dir().path_join(assembly_name + ".dylib");
-#elif defined(ANDROID_ENABLED)
+#elif defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	String native_aot_so_path = "lib" + assembly_name + ".so";
 #elif defined(UNIX_ENABLED)
 	String native_aot_so_path = GodotSharpDirs::get_api_assemblies_dir().path_join(assembly_name + ".so");
@@ -506,7 +516,7 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
 	return (godot_plugins_initialize_fn)symbol;
 }
 
-#ifdef ANDROID_ENABLED
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p_assemblies_path, void *p_user_data) {
 	constexpr bool ref_only = false;
 	const char *name = mono_assembly_name_get_name(p_assembly_name);
@@ -551,7 +561,7 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
 	godot_plugins_initialize_fn godot_plugins_initialize = nullptr;
 	String assembly_name = Path::get_csharp_project_name();
 
-#ifdef ANDROID_ENABLED
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	if (mono_install_assembly_preload_hook != nullptr) {
 		mono_install_assembly_preload_hook(&load_assembly_from_pck, nullptr);
 	}
@@ -633,7 +643,7 @@ void GDMono::initialize() {
 	}
 
 	if (godot_plugins_initialize == nullptr) {
-		WARN_PRINT(".NET: C# runtime is operating in safe fallback mode.");
+		WARN_PRINT(".NET: C# runtime initialized in standalone/safe fallback mode.");
 		initialized = true;
 		return;
 	}
