@@ -27,6 +27,10 @@
 
 namespace GodotSharpDirs {
 
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+const char *GENGINE_BASE_DIR = "/storage/emulated/0/GEngine";
+#endif
+
 String _get_expected_build_config() {
 #ifdef TOOLS_ENABLED
 	return "Debug";
@@ -42,6 +46,9 @@ String _get_expected_build_config() {
 }
 
 String _get_mono_user_dir() {
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+	return String(GENGINE_BASE_DIR).path_join("GodotSharp/mono");
+#else
 #ifdef TOOLS_ENABLED
 	if (EditorPaths::get_singleton()) {
 		return EditorPaths::get_singleton()->get_data_dir().path_join("mono");
@@ -51,6 +58,7 @@ String _get_mono_user_dir() {
 	}
 #else
 	return OS::get_singleton()->get_user_data_dir().path_join("mono");
+#endif
 #endif
 }
 
@@ -123,19 +131,23 @@ private:
 		String exe_dir = OS::get_singleton()->get_executable_path().get_base_dir();
 
 #ifdef TOOLS_ENABLED
-		String data_dir_root = OS::get_singleton()->get_user_data_dir().path_join("GodotSharp");
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+		// Sapilitang i-set ang base sa External Storage /storage/emulated/0/GEngine
+		String data_dir_root = String(GENGINE_BASE_DIR).path_join("GodotSharp");
 		data_editor_tools_dir = data_dir_root.path_join("Tools");
 		String api_assemblies_base_dir = data_dir_root.path_join("Api");
 		build_logs_dir = mono_user_dir.path_join("build_logs");
 
-#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+		_ensure_directory_exists(data_dir_root);
+		_ensure_directory_exists(data_editor_tools_dir);
+		_ensure_directory_exists(api_assemblies_base_dir);
+		_ensure_directory_exists(build_logs_dir);
+
 		Vector<String> probe_roots;
-		// Priority 1: App internal user data (100% permitted nang walang OS popup)
-		probe_roots.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp"));
-		// Priority 2: APK Assets
+		// Priority 1: External Storage (/storage/emulated/0/GEngine/GodotSharp)
+		probe_roots.push_back(data_dir_root);
+		// Priority 2: APK Assets Fallback
 		probe_roots.push_back("res://GodotSharp");
-		// Priority 3: External Storage
-		probe_roots.push_back("/storage/emulated/0/GEngine/GodotSharp");
 
 		for (int i = 0; i < probe_roots.size(); i++) {
 			String candidate = probe_roots[i];
@@ -149,7 +161,13 @@ private:
 				break;
 			}
 		}
-#elif defined(MACOS_ENABLED)
+#else
+		String data_dir_root = OS::get_singleton()->get_user_data_dir().path_join("GodotSharp");
+		data_editor_tools_dir = data_dir_root.path_join("Tools");
+		String api_assemblies_base_dir = data_dir_root.path_join("Api");
+		build_logs_dir = mono_user_dir.path_join("build_logs");
+
+#if defined(MACOS_ENABLED)
 		String res_dir = OS::get_singleton()->get_bundle_resource_dir();
 		if (!DirAccess::exists(data_editor_tools_dir)) {
 			data_editor_tools_dir = res_dir.path_join("GodotSharp").path_join("Tools");
@@ -158,6 +176,8 @@ private:
 			api_assemblies_base_dir = res_dir.path_join("GodotSharp").path_join("Api");
 		}
 #endif
+#endif
+
 		String candidate_config_dir = api_assemblies_base_dir.path_join(GDMono::get_expected_api_build_config());
 		Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		if (da.is_valid() && da->dir_exists(candidate_config_dir)) {
@@ -171,7 +191,10 @@ private:
 		String appname_safe = Path::get_csharp_project_name();
 		String packed_path = "res://.godot/mono/publish/" + arch;
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
-		api_assemblies_dir = packed_path;
+		api_assemblies_dir = String(GENGINE_BASE_DIR).path_join("GodotSharp/Api");
+		if (!DirAccess::exists(api_assemblies_dir)) {
+			api_assemblies_dir = packed_path;
+		}
 #else
 		api_assemblies_dir = exe_dir.path_join("data_" + appname_safe + "_" + platform + "_" + arch);
 #endif
