@@ -499,8 +499,15 @@ void ProjectManager::_run_project_confirm() {
 		args.push_back("--path");
 		args.push_back(path);
 
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+		OS::get_singleton()->set_restart_on_exit(true, args);
+		_dim_window();
+		get_tree()->quit();
+		return;
+#else
 		Error err = OS::get_singleton()->create_instance(args);
 		ERR_FAIL_COND(err);
+#endif
 	}
 }
 
@@ -538,7 +545,7 @@ void ProjectManager::_open_selected_projects() {
 			args.push_back("--run-upgrade-tool");
 		}
 
-#ifdef ANDROID_ENABLED
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 		args.push_back("--verbose");
 		print_line(".NET/Android: Switching into Editor mode for C# project...");
 		OS::get_singleton()->set_restart_on_exit(true, args);
@@ -633,9 +640,9 @@ void ProjectManager::_open_selected_projects_check_warnings() {
 			} else if (feature == "C#") {
 #ifndef MODULE_MONO_ENABLED
 				warning_message += TTR("Warning: This project uses C#, but this build of Godot does not have\nthe Mono module. If you proceed you will not be able to use any C# scripts.\n\n");
+#endif
 				unsupported_features.remove_at(i);
 				i--;
-#endif
 			} else if (ProjectList::project_feature_looks_like_version(feature)) {
 				ask_update_backup->show();
 				if (project.control->is_older_version()) {
@@ -652,11 +659,13 @@ void ProjectManager::_open_selected_projects_check_warnings() {
 			String unsupported_features_str = String(", ").join(unsupported_features);
 			warning_message += vformat(TTR("Warning: This project uses the following features not supported by this build of Godot:\n\n%s\n\n"), unsupported_features_str);
 		}
-		warning_message += TTR("Open anyway? Project will be modified.");
-		ask_update_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-		ask_update_label->set_text(warning_message);
-		ask_update_settings->popup_centered(popup_min_size);
-		return;
+		if (!warning_message.is_empty()) {
+			warning_message += TTR("Open anyway? Project will be modified.");
+			ask_update_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+			ask_update_label->set_text(warning_message);
+			ask_update_settings->popup_centered(popup_min_size);
+			return;
+		}
 	}
 
 	_open_selected_projects();
@@ -1129,8 +1138,15 @@ void ProjectManager::_perform_full_project_conversion() {
 	args.push_back("--rendering-driver");
 	args.push_back(OS::get_singleton()->get_current_rendering_driver_name());
 
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+	OS::get_singleton()->set_restart_on_exit(true, args);
+	_dim_window();
+	get_tree()->quit();
+	return;
+#else
 	Error err = OS::get_singleton()->create_instance(args);
 	ERR_FAIL_COND(err);
+#endif
 
 	project_list->set_project_version(path, GODOT4_CONFIG_VERSION);
 }
@@ -1843,7 +1859,6 @@ ProjectManager::ProjectManager() {
 		Ref<DirAccess> dir_access = DirAccess::create(DirAccess::AccessType::ACCESS_FILESYSTEM);
 
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
-		// Tiyakin na may GEngine workspace directory sa storage
 		if (dir_access.is_valid()) {
 			if (!dir_access->dir_exists("/storage/emulated/0/GEngine")) {
 				dir_access->make_dir_recursive("/storage/emulated/0/GEngine");
@@ -1894,10 +1909,6 @@ ProjectManager::~ProjectManager() {
 		EditorHelpHighlighter::free_singleton();
 	}
 #endif
-
-	if (EditorSettings::get_singleton()) {
-		EditorSettings::destroy();
-	}
 
 	EditorThemeManager::finalize();
 }
