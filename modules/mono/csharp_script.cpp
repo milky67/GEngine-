@@ -1,10 +1,6 @@
 /**************************************************************************/
 /*  csharp_script.cpp                                                     */
 /**************************************************************************/
-/*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
-/*                        https://godotengine.org                         */
-/**************************************************************************/
 
 #include "csharp_script.h"
 
@@ -23,7 +19,7 @@
 
 #ifdef DEBUG_ENABLED
 #include "class_db_api_json.h"
-#endif // DEBUG_ENABLED
+#endif
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_internal_calls.h"
@@ -89,7 +85,7 @@ void CSharpLanguage::init() {
 		class_db_api_to_json("user://class_db_api_editor.json", ClassDB::API_EDITOR);
 #endif
 	}
-#endif // DEBUG_ENABLED
+#endif
 
 	GLOBAL_DEF("dotnet/project/assembly_name", "");
 #ifdef TOOLS_ENABLED
@@ -102,10 +98,6 @@ void CSharpLanguage::init() {
 #endif
 
 	gdmono = memnew(GDMono);
-
-#ifdef ANDROID_ENABLED
-	print_line(".NET/Android: Initializing CSharpLanguage and checking GDMono initialization...");
-#endif
 
 	if (gdmono->should_initialize()) {
 		gdmono->initialize();
@@ -158,7 +150,7 @@ void CSharpLanguage::finalize() {
 			ERR_PRINT("Leaked unsafe reference to deleted object: " + itos(id));
 		}
 	}
-#endif // DEBUG_ENABLED
+#endif
 
 	memdelete(managed_callable_middleman);
 
@@ -356,7 +348,7 @@ void CSharpLanguage::post_unsafe_reference(Object *p_obj) {
 	MutexLock lock(unsafe_object_references_lock);
 	ObjectID id = p_obj->get_instance_id();
 	unsafe_object_references[id]++;
-#endif // DEBUG_ENABLED
+#endif
 }
 
 void CSharpLanguage::pre_unsafe_unreference(Object *p_obj) {
@@ -368,7 +360,7 @@ void CSharpLanguage::pre_unsafe_unreference(Object *p_obj) {
 	if (--elem->value == 0) {
 		unsafe_object_references.remove(elem);
 	}
-#endif // DEBUG_ENABLED
+#endif
 }
 
 void CSharpLanguage::frame() {
@@ -927,7 +919,7 @@ bool CSharpLanguage::setup_csharp_script_binding(CSharpScriptBinding &r_script_b
 		CSharpInstance *csharp_instance = CAST_CSHARP_INSTANCE(p_object->get_script_instance());
 		CRASH_COND(csharp_instance != nullptr && !csharp_instance->is_destructing_script_instance());
 	}
-#endif // DEBUG_ENABLED
+#endif
 
 	StringName type_name = p_object->get_class_name();
 	const ClassDB::ClassInfo *classinfo = ClassDB::classes.getptr(type_name);
@@ -945,7 +937,7 @@ bool CSharpLanguage::setup_csharp_script_binding(CSharpScriptBinding &r_script_b
 
 #ifdef DEBUG_ENABLED
 	CRASH_COND(!r_script_binding.gchandle.is_released());
-#endif // DEBUG_ENABLED
+#endif
 
 	if (!GDMonoCache::godot_api_cache_updated || GDMonoCache::managed_callbacks.ScriptManagerBridge_CreateManagedForGodotObjectBinding == nullptr) {
 		return false;
@@ -1025,7 +1017,7 @@ GDExtensionBool CSharpLanguage::_instance_binding_reference_callback(void *p_tok
 
 #ifdef DEBUG_ENABLED
 	CRASH_COND(!rc_owner);
-#endif // DEBUG_ENABLED
+#endif
 
 	MonoGCHandleData &gchandle = script_binding.gchandle;
 	int refcount = rc_owner->get_reference_count();
@@ -1439,7 +1431,7 @@ bool CSharpInstance::_reference_owner_unsafe() {
 	CRASH_COND(!base_ref_counted);
 	CRASH_COND(owner == nullptr);
 	CRASH_COND(unsafe_referenced);
-#endif // DEBUG_ENABLED
+#endif
 
 	if (static_cast<RefCounted *>(owner)->init_ref()) {
 		CSharpLanguage::get_singleton()->post_unsafe_reference(owner);
@@ -1453,7 +1445,7 @@ bool CSharpInstance::_unreference_owner_unsafe() {
 #ifdef DEBUG_ENABLED
 	CRASH_COND(!base_ref_counted);
 	CRASH_COND(owner == nullptr);
-#endif // DEBUG_ENABLED
+#endif
 
 	if (!unsafe_referenced) {
 		return false;
@@ -1497,7 +1489,7 @@ void CSharpInstance::mono_object_disposed(GCHandleIntPtr p_gchandle_to_free) {
 #ifdef DEBUG_ENABLED
 	CRASH_COND(base_ref_counted);
 	CRASH_COND(gchandle.is_released());
-#endif // DEBUG_ENABLED
+#endif
 	CSharpLanguage::get_singleton()->release_script_gchandle_thread_safe(p_gchandle_to_free, gchandle);
 }
 
@@ -1505,7 +1497,7 @@ void CSharpInstance::mono_object_disposed_baseref(GCHandleIntPtr p_gchandle_to_f
 #ifdef DEBUG_ENABLED
 	CRASH_COND(!base_ref_counted);
 	CRASH_COND(gchandle.is_released());
-#endif // DEBUG_ENABLED
+#endif
 
 	disconnect_event_signals();
 	r_remove_script_instance = false;
@@ -1553,7 +1545,7 @@ void CSharpInstance::refcount_incremented() {
 #ifdef DEBUG_ENABLED
 	CRASH_COND(!base_ref_counted);
 	CRASH_COND(owner == nullptr);
-#endif // DEBUG_ENABLED
+#endif
 
 	RefCounted *rc_owner = Object::cast_to<RefCounted>(owner);
 
@@ -1581,7 +1573,7 @@ bool CSharpInstance::refcount_decremented() {
 #ifdef DEBUG_ENABLED
 	CRASH_COND(!base_ref_counted);
 	CRASH_COND(owner == nullptr);
-#endif // DEBUG_ENABLED
+#endif
 
 	RefCounted *rc_owner = Object::cast_to<RefCounted>(owner);
 	int refcount = rc_owner->get_reference_count();
@@ -1705,7 +1697,6 @@ CSharpInstance::~CSharpInstance() {
 		if (data != nullptr) {
 			CSharpScriptBinding &script_binding = ((RBMap<Object *, CSharpScriptBinding>::Element *)data)->get();
 			if (script_binding.inited) {
-				// Safely handled
 			}
 		}
 	}
@@ -1719,7 +1710,7 @@ CSharpInstance::~CSharpInstance() {
 		}
 #else
 		script->instances.erase(owner);
-#endif // DEBUG_ENABLED
+#endif
 	}
 }
 
@@ -1766,7 +1757,7 @@ void GD_CLR_STDCALL CSharpScript::_add_property_info_list_callback(CSharpScript 
 #endif
 #if defined(TOOLS_ENABLED) || defined(DEBUG_ENABLED)
 			p_script->exported_members_names.insert(name);
-#endif // DEBUG_ENABLED
+#endif
 		}
 	}
 }
@@ -2252,7 +2243,7 @@ Error CSharpScript::reload(bool p_keep_state) {
 	if (valid) {
 #ifdef DEBUG_ENABLED
 		print_verbose("Found class for script " + get_path());
-#endif // DEBUG_ENABLED
+#endif
 
 		update_script_class_info(this);
 		_update_exports();
@@ -2385,6 +2376,11 @@ int CSharpScript::get_member_line(const StringName &p_member) const {
 const Variant CSharpScript::get_rpc_config() const {
 	return rpc_config;
 }
+
+Narito ang karugtong ng File 3 (csharp_script.cpp) pati na ang File 4
+(managed_callable.cpp) at File 5 (godotsharp_dirs.cpp):
+
+Karugtong ng File 3: modules/mono/csharp_script.cpp (Mula sa dulo)
 
 Error CSharpScript::load_source_code(const String &p_path) {
 	Error ferr = read_all_file_utf8(p_path, source);
