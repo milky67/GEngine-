@@ -50,7 +50,11 @@ bool ManagedCallable::compare_equal(const CallableCustom *p_a, const CallableCus
 		return false;
 	}
 
-	// Call Delegate's 'Equals'
+	if (!GDMonoCache::godot_api_cache_updated || GDMonoCache::managed_callbacks.DelegateUtils_DelegateEquals == nullptr) {
+		return a->delegate_handle.value == b->delegate_handle.value;
+	}
+
+	// Call Delegate's 'Equals' safely
 	return GDMonoCache::managed_callbacks.DelegateUtils_DelegateEquals(
 			a->delegate_handle, b->delegate_handle);
 }
@@ -63,6 +67,9 @@ bool ManagedCallable::compare_less(const CallableCustom *p_a, const CallableCust
 }
 
 uint32_t ManagedCallable::hash() const {
+	if (!GDMonoCache::godot_api_cache_updated || GDMonoCache::managed_callbacks.DelegateUtils_DelegateHash == nullptr || delegate_handle.value == nullptr) {
+		return (uint32_t)(uint64_t)delegate_handle.value;
+	}
 	return GDMonoCache::managed_callbacks.DelegateUtils_DelegateHash(delegate_handle);
 }
 
@@ -82,18 +89,33 @@ ObjectID ManagedCallable::get_object() const {
 	if (object_id != ObjectID()) {
 		return object_id;
 	}
-	return CSharpLanguage::get_singleton()->get_managed_callable_middleman()->get_instance_id();
+	if (CSharpLanguage::get_singleton() && CSharpLanguage::get_singleton()->get_managed_callable_middleman()) {
+		return CSharpLanguage::get_singleton()->get_managed_callable_middleman()->get_instance_id();
+	}
+	return ObjectID();
 }
 
 int ManagedCallable::get_argument_count(bool &r_is_valid) const {
+	if (!GDMonoCache::godot_api_cache_updated || GDMonoCache::managed_callbacks.DelegateUtils_GetArgumentCount == nullptr || delegate_handle.value == nullptr) {
+		r_is_valid = false;
+		return 0;
+	}
 	return GDMonoCache::managed_callbacks.DelegateUtils_GetArgumentCount(delegate_handle, &r_is_valid);
 }
 
 void ManagedCallable::call(const Variant **p_arguments, int p_argcount, Variant &r_return_value, Callable::CallError &r_call_error) const {
-	r_call_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD; // Can't find anything better
+	r_call_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
 	r_return_value = Variant();
 
-	ERR_FAIL_NULL(delegate_handle.value);
+	if (delegate_handle.value == nullptr) {
+		r_call_error.error = Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL;
+		return;
+	}
+
+	if (!GDMonoCache::godot_api_cache_updated || GDMonoCache::managed_callbacks.DelegateUtils_InvokeWithVariantArgs == nullptr) {
+		r_call_error.error = Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL;
+		return;
+	}
 
 	GDMonoCache::managed_callbacks.DelegateUtils_InvokeWithVariantArgs(
 			delegate_handle, trampoline, p_arguments, p_argcount, &r_return_value);
@@ -102,8 +124,10 @@ void ManagedCallable::call(const Variant **p_arguments, int p_argcount, Variant 
 }
 
 void ManagedCallable::release_delegate_handle() {
-	if (delegate_handle.value) {
-		GDMonoCache::managed_callbacks.GCHandleBridge_FreeGCHandle(delegate_handle);
+	if (delegate_handle.value != nullptr) {
+		if (GDMonoCache::godot_api_cache_updated && GDMonoCache::managed_callbacks.GCHandleBridge_FreeGCHandle != nullptr) {
+			GDMonoCache::managed_callbacks.GCHandleBridge_FreeGCHandle(delegate_handle);
+		}
 		delegate_handle = { nullptr };
 	}
 }
