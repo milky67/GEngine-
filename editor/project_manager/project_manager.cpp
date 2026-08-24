@@ -1859,30 +1859,25 @@ ProjectManager::ProjectManager() {
 		Ref<DirAccess> dir_access = DirAccess::create(DirAccess::AccessType::ACCESS_FILESYSTEM);
 
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+		// Tiyakin na ligtas ang pag-check sa GEngine storage
 		if (dir_access.is_valid()) {
-			if (!dir_access->dir_exists("/storage/emulated/0/GEngine")) {
-				dir_access->make_dir_recursive("/storage/emulated/0/GEngine");
+			if (dir_access->dir_exists("/storage/emulated/0/GEngine")) {
+				print_verbose("GEngine directory exists on external storage.");
 			}
 		}
 #endif
 
 		String default_project_path = EDITOR_GET("filesystem/directories/default_project_path");
-		if (!default_project_path.is_empty() && !dir_access->dir_exists(default_project_path)) {
-			Error error = dir_access->make_dir_recursive(default_project_path);
-			if (error != OK) {
-				ERR_PRINT("Could not create default project directory at: " + default_project_path);
-			}
+		if (!default_project_path.is_empty() && dir_access.is_valid() && !dir_access->dir_exists(default_project_path)) {
+			dir_access->make_dir_recursive(default_project_path);
 		}
 
 		String autoscan_path = EDITOR_GET("filesystem/directories/autoscan_project_path");
-		if (!autoscan_path.is_empty()) {
+		if (!autoscan_path.is_empty() && dir_access.is_valid()) {
 			if (dir_access->dir_exists(autoscan_path)) {
 				project_list->find_projects(autoscan_path);
 			} else {
-				Error error = dir_access->make_dir_recursive(autoscan_path);
-				if (error != OK) {
-					ERR_PRINT("Could not create project autoscan directory at: " + autoscan_path);
-				}
+				dir_access->make_dir_recursive(autoscan_path);
 			}
 		}
 		project_list->update_project_list();
