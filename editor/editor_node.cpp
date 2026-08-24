@@ -1,3 +1,5 @@
+
+
 /**************************************************************************/
 /*  editor_node.cpp                                                       */
 /**************************************************************************/
@@ -201,17 +203,17 @@
 
 #ifndef PHYSICS_2D_DISABLED
 #include "servers/physics_2d/physics_server_2d.h"
-#endif // PHYSICS_2D_DISABLED
+#endif
 
 #ifndef PHYSICS_3D_DISABLED
 #include "servers/physics_3d/physics_server_3d.h"
-#endif // PHYSICS_3D_DISABLED
+#endif
 
 #ifdef ANDROID_ENABLED
 #include "editor/gui/touch_actions_panel.h"
-#endif // ANDROID_ENABLED
+#endif
 
-#include "modules/modules_enabled.gen.h" // For gdscript, mono.
+#include "modules/modules_enabled.gen.h"
 
 #ifdef MODULE_MONO_ENABLED
 #include "modules/mono/mono_gd/gd_mono.h"
@@ -599,7 +601,7 @@ void EditorNode::_update_from_settings() {
 	NavigationServer3D::get_singleton()->set_debug_navigation_enable_edge_lines(GLOBAL_GET("debug/shapes/navigation/3d/enable_edge_lines"));
 	NavigationServer3D::get_singleton()->set_debug_navigation_enable_edge_lines_xray(GLOBAL_GET("debug/shapes/navigation/3d/enable_edge_lines_xray"));
 	NavigationServer3D::get_singleton()->set_debug_navigation_enable_geometry_face_random_color(GLOBAL_GET("debug/shapes/navigation/3d/enable_geometry_face_random_color"));
-#endif // DEBUG_ENABLED
+#endif
 }
 
 void EditorNode::_gdextensions_reloaded() {
@@ -835,9 +837,23 @@ void EditorNode::update_preview_themes(int p_mode) {
 
 bool EditorNode::_is_project_data_missing() {
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+	if (da.is_null()) {
+		return false;
+	}
+
 	const String project_data_dir = EditorPaths::get_singleton()->get_project_data_dir();
 	if (!da->dir_exists(project_data_dir)) {
-		return true;
+		da->make_dir_recursive(project_data_dir);
+	}
+
+	const String settings_dir = EditorPaths::get_singleton()->get_project_settings_dir();
+	if (!da->dir_exists(settings_dir)) {
+		da->make_dir_recursive(settings_dir);
+	}
+
+	const String imported_dir = ProjectSettings::get_singleton()->get_imported_files_path();
+	if (!da->dir_exists(imported_dir)) {
+		da->make_dir_recursive(imported_dir);
 	}
 
 	String project_data_gdignore_file_path = project_data_dir.path_join(".gdignore");
@@ -845,28 +861,14 @@ bool EditorNode::_is_project_data_missing() {
 		Ref<FileAccess> f = FileAccess::open(project_data_gdignore_file_path, FileAccess::WRITE);
 		if (f.is_valid()) {
 			f->store_line("");
-		} else {
-			ERR_PRINT("Failed to create file " + project_data_gdignore_file_path.quote() + ".");
 		}
 	}
 
 	String uid_cache = ResourceUID::get_singleton()->get_cache_file();
 	if (!da->file_exists(uid_cache)) {
-		Error err = ResourceUID::get_singleton()->save_to_cache();
-		if (err != OK) {
-			ERR_PRINT("Failed to create file " + uid_cache.quote() + ".");
-		}
+		ResourceUID::get_singleton()->save_to_cache();
 	}
 
-	const String dirs[] = {
-		EditorPaths::get_singleton()->get_project_settings_dir(),
-		ProjectSettings::get_singleton()->get_imported_files_path()
-	};
-	for (const String &dir : dirs) {
-		if (!da->dir_exists(dir)) {
-			return true;
-		}
-	}
 	return false;
 }
 
@@ -1056,11 +1058,8 @@ void EditorNode::_notification(int p_what) {
 		case NOTIFICATION_APPLICATION_FOCUS_IN: {
 			OS::get_singleton()->set_low_processor_usage_mode_sleep_usec(int(EDITOR_GET("interface/editor/timers/low_processor_mode_sleep_usec")));
 
-			if (_is_project_data_missing()) {
-				project_data_missing->popup_centered();
-			} else {
-				EditorFileSystem::get_singleton()->scan_changes();
-			}
+			_is_project_data_missing();
+			EditorFileSystem::get_singleton()->scan_changes();
 			_scan_external_changes();
 
 			GDExtensionManager *gdextension_manager = GDExtensionManager::get_singleton();
@@ -5871,7 +5870,7 @@ String EditorNode::_get_system_info() const {
 	String display_session_type;
 #ifdef LINUXBSD_ENABLED
 	display_session_type = OS::get_singleton()->get_environment("XDG_SESSION_TYPE").capitalize().remove_char(' ');
-#endif // LINUXBSD_ENABLED
+#endif
 	String driver_name = OS::get_singleton()->get_current_rendering_driver_name().to_lower();
 	String rendering_method = OS::get_singleton()->get_current_rendering_method().to_lower();
 
@@ -5961,7 +5960,7 @@ String EditorNode::_get_system_info() const {
 	String display_driver_window_mode;
 #ifdef LINUXBSD_ENABLED
 	display_driver_window_mode = DisplayServer::get_singleton()->get_name().capitalize().remove_char(' ') + " display driver";
-#endif // LINUXBSD_ENABLED
+#endif
 	if (!display_driver_window_mode.is_empty()) {
 		display_driver_window_mode += ", ";
 	}
@@ -6582,11 +6581,16 @@ void EditorNode::_restart_editor(bool p_goto_project_manager) {
 	if (p_goto_project_manager) {
 		args.push_back("--project-manager");
 
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+		args.push_back("--path");
+		args.push_back("/storage/emulated/0/GEngine");
+#else
 		const String exec_dir = OS::get_singleton()->get_executable_path().get_base_dir();
 		if (!exec_dir.is_empty()) {
 			args.push_back("--path");
 			args.push_back(exec_dir);
 		}
+#endif
 
 		List<String>::Element *vbf = args.find("--verbose");
 		if (vbf) {
@@ -9397,3 +9401,4 @@ EditorNode::~EditorNode() {
 
 	singleton = nullptr;
 }
+
