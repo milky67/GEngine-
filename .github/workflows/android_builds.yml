@@ -89,8 +89,9 @@ jobs:
 
           unzip -q -o mono_pack.zip -d mono_extracted
 
-          # Isama ang LAHAT ng .so sa jniLibs
+          # Isama ang LAHAT ng .so sa jniLibs at assets
           find mono_extracted/ -name "*.so" -exec cp -v {} "$DEST_JNI/" \;
+          find mono_extracted/ -name "*.so" -exec cp -v {} "$DEST_GODOTSHARP/" \;
 
           # Isama ang LAHAT ng .dll, .json, .props, .targets sa GodotSharp at dotnet root
           find mono_extracted/ \( -name "*.dll" -o -name "*.json" -o -name "*.props" -o -name "*.targets" -o -name "*.xml" \) -exec cp {} "$DEST_GODOTSHARP/Mono/" \;
@@ -103,21 +104,24 @@ jobs:
           
           if [ -d /tmp/dotnet-arm64 ]; then
             find /tmp/dotnet-arm64/ -name "*.so" -exec cp -v {} "$DEST_JNI/" \; || true
+            find /tmp/dotnet-arm64/ -name "*.so" -exec cp -v {} "$DEST_GODOTSHARP/" \; || true
             find /tmp/dotnet-arm64/ -name "libhostfxr.so" -exec cp -v {} "$DEST_DOTNET/host/fxr/8.0.12/" \; || true
             find /tmp/dotnet-arm64/ -name "libhostpolicy.so" -exec cp -v {} "$DEST_DOTNET/shared/Microsoft.NETCore.App/8.0.12/" \; || true
             find /tmp/dotnet-arm64/ \( -name "*.dll" -o -name "*.json" -o -name "*.props" -o -name "*.targets" -o -name "*.xml" \) -exec cp {} "$DEST_DOTNET/shared/Microsoft.NETCore.App/8.0.12/" \; || true
           fi
 
-          echo "=== 3. Extracting NDK Libs (libc++_shared.so, libgcc_s.so.1) ==="
+          echo "=== 3. Extracting NDK Libs (libc++_shared.so) ==="
           NDK_PATH="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk}}"
           NDK_LIBCXX=$(find "$NDK_PATH" -name "libc++_shared.so" 2>/dev/null | grep -E "aarch64|arm64-v8a" | head -n 1 || true)
           if [ -n "$NDK_LIBCXX" ] && [ -f "$NDK_LIBCXX" ]; then
             cp -v "$NDK_LIBCXX" "$DEST_JNI/"
-            cp -v "$NDK_LIBCXX" "$DEST_JNI/libgcc_s.so.1"
+            cp -v "$NDK_LIBCXX" "$DEST_GODOTSHARP/"
           fi
 
           if [ -f "$DEST_JNI/libmonosgen-2.0.so" ]; then
             cp -v "$DEST_JNI/libmonosgen-2.0.so" "$DEST_JNI/libmonosgen.so"
+            cp -v "$DEST_JNI/libmonosgen-2.0.so" "$DEST_GODOTSHARP/libmonosgen.so"
+            cp -v "$DEST_JNI/libmonosgen-2.0.so" "$DEST_GODOTSHARP/libmonosgen-2.0.so"
           fi
 
           echo "=== All Bundled Native (.so) Libraries in jniLibs/arm64-v8a ==="
@@ -127,7 +131,9 @@ jobs:
       - name: Build Host Linux Editor (Mono Glue Generator)
         run: |
           scons platform=linuxbsd target=editor module_mono_enabled=yes -j$(nproc)
-          ./bin/godot.linuxbsd.editor.x86_64.mono --headless --generate-mono-glue modules/mono/glue
+          HOST_EDITOR=$(find bin/ -maxdepth 1 -name "godot.linuxbsd.editor*" -type f -executable | head -n 1)
+          echo "Found host editor: $HOST_EDITOR"
+          $HOST_EDITOR --headless --generate-mono-glue modules/mono/glue
 
       # 3. I-compile ang GodotSharp Assemblies
       - name: Build GodotSharp Assemblies
@@ -144,8 +150,12 @@ jobs:
         run: |
           DEST_ASSETS="platform/android/java/editor/src/main/assets"
 
-          # 1. Kopyahin ang buong laman ng bin/GodotSharp (DLLs, JSON configs, pdb)
-          cp -rv bin/GodotSharp/* "$DEST_ASSETS/GodotSharp/"
+          # 1. Kopyahin ang buong laman ng bin/GodotSharp (DLLs, JSON configs, Tools, Api)
+          if [ -d "bin/GodotSharp" ]; then
+            cp -rv bin/GodotSharp/* "$DEST_ASSETS/GodotSharp/"
+            cp -rv bin/GodotSharp/Api/* "$DEST_ASSETS/GodotSharp/Api/" || true
+            cp -rv bin/GodotSharp/Tools/* "$DEST_ASSETS/GodotSharp/Tools/" || true
+          fi
 
           # 2. Isama ang lahat ng Godot.NET.Sdk props, targets, at templates
           if [ -d "modules/mono/editor/GodotTools/GodotTools/Build" ]; then
@@ -156,9 +166,10 @@ jobs:
           # 3. Kopyahin ang anumang Sdk props/targets mula sa modules/mono
           find modules/mono/ -type f \( -name "*.props" -o -name "*.targets" -o -name "*.csproj" -o -name "*.sln" -o -name "*.xml" \) -exec cp {} "$DEST_ASSETS/GodotSharp/Sdk/" \; || true
 
-          # 4. I-configure ang Gradle upang HINDI i-compress ang mga DLLs, JSON, PROPS, TARGETS, CSPROJ, SLN, XML, SO
-          if [ -f platform/android/java/editor/build.gradle ]; then
-            printf "\nandroid {\n    aaptOptions {\n        noCompress 'dll', 'json', 'so', 'props', 'targets', 'csproj', 'sln', 'xml', 'config', 'deps.json', 'runtimeconfig.json'\n    }\n}\n" >> platform/android/java/editor/build.gradle
+          # 4. I-configure ang Gradle upang HINDI i-compress ang mga binaries at configs
+          GRADLE_FILE="platform/android/java/editor/build.gradle"
+          if [ -f "$GRADLE_FILE" ]; then
+            echo "android { aaptOptions { noCompress 'dll', 'json', 'so', 'props', 'targets', 'csproj', 'sln', 'xml', 'config', 'deps.json', 'runtimeconfig.json' } }" >> "$GRADLE_FILE"
           fi
 
           echo "=== Complete Assets Verification ==="
@@ -174,13 +185,15 @@ jobs:
       - name: Generate Android Editor APK
         run: |
           cd platform/android/java
-          ./gradlew generateGodotEditor
+          ./gradlew generateGodotEditor --stacktrace || ./gradlew assembleDebug --stacktrace
           cd ../../..
-          ls -lh bin/android_editor_builds/
 
       # 7. I-upload ang Final Complete APK Artifact
       - name: Upload GEngine Android Editor APK
         uses: actions/upload-artifact@v4
         with:
           name: GEngine-Android-Editor-CSharp-arm64
-          path: bin/android_editor_builds/*.apk
+          path: |
+            bin/android_editor_builds/*.apk
+            platform/android/java/editor/build/outputs/apk/**/*.apk
+          if-no-files-found: error
