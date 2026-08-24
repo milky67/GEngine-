@@ -30,6 +30,7 @@
 #include "core/config/project_settings.h"
 #include "core/debugger/engine_debugger.h"
 #include "core/debugger/script_debugger.h"
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/object/class_db.h"
 #include "core/os/mutex.h"
@@ -91,6 +92,17 @@ void CSharpLanguage::init() {
 #ifdef TOOLS_ENABLED
 	GLOBAL_DEF("dotnet/project/solution_directory", "");
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "dotnet/project/assembly_reload_attempts", PROPERTY_HINT_RANGE, "1,16,1,or_greater"), 3);
+#endif
+
+#if defined(__ANDROID__) || defined(ANDROID_ENABLED)
+	// Siguraduhin na may folder structure sa /storage/emulated/0/GEngine para sa custom C# scripts at assemblies
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (da.is_valid()) {
+		if (!da->dir_exists("/storage/emulated/0/GEngine")) {
+			da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Tools");
+			da->make_dir_recursive("/storage/emulated/0/GEngine/GodotSharp/Api");
+		}
+	}
 #endif
 
 #ifdef TOOLS_ENABLED
@@ -832,30 +844,50 @@ bool CSharpLanguage::debug_break(const String &p_error, bool p_allow_continue) {
 #ifdef TOOLS_ENABLED
 void CSharpLanguage::_editor_init_callback() {
 	if (!GDMono::get_singleton() || !GDMono::get_singleton()->is_runtime_initialized()) {
-		print_line(".NET/Android: Skipping Tools assembly loading (Runtime not initialized).");
+		print_line(".NET/GEngine: Skipping Tools assembly loading (Runtime not initialized).");
 		return;
 	}
 
 	if (GDMono::get_singleton()->get_plugin_callbacks().LoadToolsAssemblyCallback == nullptr) {
-		print_line(".NET/Android: LoadToolsAssemblyCallback is null.");
+		print_line(".NET/GEngine: LoadToolsAssemblyCallback is null.");
 		return;
 	}
 
 	int32_t interop_funcs_size = 0;
 	const void **interop_funcs = godotsharp::get_editor_interop_funcs(interop_funcs_size);
 
-	String tools_path = GodotSharpDirs::get_data_editor_tools_dir().path_join("GodotTools.dll");
-	if (!FileAccess::exists(tools_path)) {
-		print_verbose(".NET/Android: GodotTools.dll not found at: " + tools_path);
-		return;
+	// Multi-path search para sa GodotTools.dll (Android + Desktop Support)
+	Vector<String> possible_tools_paths;
+	possible_tools_paths.push_back(GodotSharpDirs::get_data_editor_tools_dir().path_join("GodotTools.dll"));
+	possible_tools_paths.push_back("res://.godot/mono/temp/bin/Debug/GodotTools.dll");
+	possible_tools_paths.push_back(OS::get_singleton()->get_user_data_dir().path_join("GodotSharp/Tools/GodotTools.dll"));
+	possible_tools_paths.push_back("/storage/emulated/0/GEngine/GodotSharp/Tools/GodotTools.dll");
+
+	String tools_path = "";
+	for (int i = 0; i < possible_tools_paths.size(); i++) {
+		String p = ProjectSettings::get_singleton()->globalize_path(possible_tools_paths[i]);
+		if (FileAccess::exists(p)) {
+			tools_path = p;
+			break;
+		}
 	}
+
+	if (tools_path.is_empty()) {
+		print_verbose(".NET/GEngine: GodotTools.dll not found in standard paths. Fallback default used.");
+		tools_path = GodotSharpDirs::get_data_editor_tools_dir().path_join("GodotTools.dll");
+		if (!FileAccess::exists(tools_path)) {
+			return;
+		}
+	}
+
+	print_line(".NET/GEngine: Loading GodotTools from: " + tools_path);
 
 	Object *editor_plugin_obj = GDMono::get_singleton()->get_plugin_callbacks().LoadToolsAssemblyCallback(
 			tools_path.utf16().get_data(),
 			interop_funcs, interop_funcs_size);
 
 	if (editor_plugin_obj == nullptr) {
-		print_line(".NET/Android: Warning: GodotTools assembly could not be instantiated.");
+		print_line(".NET/GEngine: Warning: GodotTools assembly could not be instantiated.");
 		return;
 	}
 
