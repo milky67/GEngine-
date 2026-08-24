@@ -1,5 +1,5 @@
 /**************************************************************************/
-/* gd_mono.cpp                                                            */
+/*                                                             */
 /**************************************************************************/
 
 #include "gd_mono.h"
@@ -676,7 +676,12 @@ void GDMono::initialize() {
 	GDMonoCache::ManagedCallbacks managed_callbacks{};
 
 	void *godot_dll_handle = nullptr;
-#if defined(UNIX_ENABLED) && !defined(MACOS_ENABLED) && !defined(APPLE_EMBEDDED_ENABLED)
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+	godot_dll_handle = dlopen("libgodot_android.so", RTLD_NOW);
+	if (!godot_dll_handle) {
+		godot_dll_handle = dlopen(nullptr, RTLD_NOW);
+	}
+#elif defined(UNIX_ENABLED) && !defined(MACOS_ENABLED) && !defined(APPLE_EMBEDDED_ENABLED)
 	godot_dll_handle = dlopen(nullptr, RTLD_NOW);
 #endif
 
