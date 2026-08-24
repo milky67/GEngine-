@@ -31,6 +31,7 @@
 #include "path_utils.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
 
@@ -49,6 +50,20 @@
 namespace Path {
 
 String find_executable(const String &p_name) {
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+	Vector<String> android_dotnet_bins;
+	android_dotnet_bins.push_back("/storage/emulated/0/GEngine/dotnet/" + p_name);
+	android_dotnet_bins.push_back("/storage/emulated/0/GEngine/GodotSharp/dotnet/" + p_name);
+	android_dotnet_bins.push_back("/storage/emulated/0/GEngine/dotnet");
+	android_dotnet_bins.push_back("/storage/emulated/0/GEngine/" + p_name);
+
+	for (int i = 0; i < android_dotnet_bins.size(); i++) {
+		if (FileAccess::exists(android_dotnet_bins[i])) {
+			return android_dotnet_bins[i];
+		}
+	}
+#endif
+
 #ifdef WINDOWS_ENABLED
 	Vector<String> exts = OS::get_singleton()->get_environment("PATHEXT").split(ENV_PATH_SEP, false);
 #endif
@@ -63,7 +78,7 @@ String find_executable(const String &p_name) {
 
 #ifdef WINDOWS_ENABLED
 		for (int j = 0; j < exts.size(); j++) {
-			String p2 = p + exts[j].to_lower(); // lowercase to reduce risk of case mismatch warning
+			String p2 = p + exts[j].to_lower();
 
 			if (FileAccess::exists(p2)) {
 				return p2;
@@ -94,6 +109,14 @@ String cwd() {
 		return ".";
 	}
 	return result.simplify_path();
+#elif defined(ANDROID_ENABLED) || defined(__ANDROID__)
+	if (ProjectSettings::get_singleton()) {
+		String resource_path = ProjectSettings::get_singleton()->get_resource_path();
+		if (!resource_path.is_empty()) {
+			return ProjectSettings::get_singleton()->globalize_path(resource_path).simplify_path();
+		}
+	}
+	return "/storage/emulated/0/GEngine";
 #else
 	char buffer[PATH_MAX];
 	if (::getcwd(buffer, sizeof(buffer)) == nullptr) {
@@ -148,10 +171,15 @@ String realpath(const String &p_path) {
 
 	return result.simplify_path();
 #elif defined(UNIX_ENABLED)
-	char *resolved_path = ::realpath(p_path.utf8().get_data(), nullptr);
+	String global_path = p_path;
+	if (ProjectSettings::get_singleton() && (p_path.begins_with("res://") || p_path.begins_with("user://"))) {
+		global_path = ProjectSettings::get_singleton()->globalize_path(p_path);
+	}
+
+	char *resolved_path = ::realpath(global_path.utf8().get_data(), nullptr);
 
 	if (!resolved_path) {
-		return p_path;
+		return global_path.simplify_path();
 	}
 
 	String result;
@@ -159,7 +187,7 @@ String realpath(const String &p_path) {
 	::free(resolved_path);
 
 	if (parse_ok != OK) {
-		return p_path;
+		return global_path.simplify_path();
 	}
 
 	return result.simplify_path();
@@ -189,8 +217,6 @@ String join(const String &p_a, const String &p_b, const String &p_c, const Strin
 }
 
 String relative_to_impl(const String &p_path, const String &p_relative_to) {
-	// This function assumes arguments are normalized and absolute paths
-
 	if (p_path.begins_with(p_relative_to)) {
 		return p_path.substr(p_relative_to.length() + 1);
 	} else {
@@ -233,12 +259,9 @@ String get_csharp_project_name() {
 	String name = GLOBAL_GET("dotnet/project/assembly_name");
 	if (name.is_empty()) {
 		name = GLOBAL_GET("application/config/name");
-		Vector<String> invalid_chars = Vector<String>({ //
-				// Windows reserved filename chars.
+		Vector<String> invalid_chars = Vector<String>({
 				":", "*", "?", "\"", "<", ">", "|",
-				// Directory separators.
 				"/", "\\",
-				// Other chars that have been found to break assembly loading.
 				";", "'", "=", "," });
 		name = name.strip_edges();
 		for (int i = 0; i < invalid_chars.size(); i++) {
@@ -250,7 +273,6 @@ String get_csharp_project_name() {
 		name = "UnnamedProject";
 	}
 
-	// Avoid reserved names that conflict with Godot assemblies.
 	if (reserved_assembly_names.has(name)) {
 		name += "_";
 	}
