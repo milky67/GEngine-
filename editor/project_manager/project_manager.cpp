@@ -86,7 +86,9 @@ void ProjectManager::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_TRANSLATION_CHANGED: {
-			SceneTree::get_singleton()->get_root()->set_title(GODOT_VERSION_NAME + String(" - ") + TTR("Project Manager", "Application"));
+			if (SceneTree::get_singleton() && SceneTree::get_singleton()->get_root()) {
+				SceneTree::get_singleton()->get_root()->set_title(GODOT_VERSION_NAME + String(" - ") + TTR("Project Manager", "Application"));
+			}
 
 			const String line1 = TTR("You don't have any projects yet.");
 			const String line2 = TTR("Get started by creating a new one,\nimporting one that exists, or by downloading a project template from the Asset Store!");
@@ -433,7 +435,9 @@ void ProjectManager::_restart_confirmed() {
 	Error err = OS::get_singleton()->create_instance(args);
 	ERR_FAIL_COND(err);
 	_dim_window();
-	get_tree()->quit();
+	if (get_tree()) {
+		get_tree()->quit();
+	}
 }
 
 void ProjectManager::_update_list_placeholder() {
@@ -502,7 +506,9 @@ void ProjectManager::_run_project_confirm() {
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 		OS::get_singleton()->set_restart_on_exit(true, args);
 		_dim_window();
-		get_tree()->quit();
+		if (get_tree()) {
+			get_tree()->quit();
+		}
 		return;
 #else
 		Error err = OS::get_singleton()->create_instance(args);
@@ -555,7 +561,9 @@ void ProjectManager::_open_selected_projects() {
 		fflush(stdout);
 		fflush(stderr);
 
-		get_tree()->quit();
+		if (get_tree()) {
+			get_tree()->quit();
+		}
 		return;
 #else
 		Error err = OS::get_singleton()->create_instance(args);
@@ -570,7 +578,9 @@ void ProjectManager::_open_selected_projects() {
 
 	project_list->project_opening_initiated = true;
 	_dim_window();
-	get_tree()->quit();
+	if (get_tree()) {
+		get_tree()->quit();
+	}
 }
 
 void ProjectManager::_open_selected_projects_check_warnings() {
@@ -766,9 +776,13 @@ void ProjectManager::_show_project_in_file_manager() {
 		return;
 	}
 
+#if !defined(ANDROID_ENABLED) && !defined(__ANDROID__)
 	for (const ProjectList::Item &E : selected_list) {
 		OS::get_singleton()->shell_show_in_file_manager(E.path, true);
 	}
+#else
+	DisplayServer::get_singleton()->clipboard_set(selected_list[0].path);
+#endif
 }
 
 void ProjectManager::_erase_project() {
@@ -1141,7 +1155,9 @@ void ProjectManager::_perform_full_project_conversion() {
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
 	OS::get_singleton()->set_restart_on_exit(true, args);
 	_dim_window();
-	get_tree()->quit();
+	if (get_tree()) {
+		get_tree()->quit();
+	}
 	return;
 #else
 	Error err = OS::get_singleton()->create_instance(args);
@@ -1164,7 +1180,9 @@ void ProjectManager::shortcut_input(const Ref<InputEvent> &p_ev) {
 #ifndef MACOS_ENABLED
 		if (k->get_keycode_with_modifiers() == (KeyModifierMask::META | Key::Q)) {
 			_dim_window();
-			get_tree()->quit();
+			if (get_tree()) {
+				get_tree()->quit();
+			}
 		}
 #endif
 
@@ -1325,7 +1343,9 @@ ProjectManager::ProjectManager() {
 	EditorHelpHighlighter::create_singleton();
 #endif
 
-	SceneTree::get_singleton()->get_root()->connect("files_dropped", callable_mp(this, &ProjectManager::_files_dropped));
+	if (SceneTree::get_singleton() && SceneTree::get_singleton()->get_root()) {
+		SceneTree::get_singleton()->get_root()->connect("files_dropped", callable_mp(this, &ProjectManager::_files_dropped));
+	}
 
 	{
 		int pm_root_dir = EDITOR_GET("interface/editor/localization/ui_layout_direction");
@@ -1688,7 +1708,14 @@ ProjectManager::ProjectManager() {
 		scan_dir->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
 		scan_dir->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_DIR);
 		scan_dir->set_title(TTRC("Select a Folder to Scan"));
-		scan_dir->set_current_dir(EDITOR_GET("filesystem/directories/default_project_path"));
+
+		String scan_default = EDITOR_GET("filesystem/directories/default_project_path");
+#if defined(ANDROID_ENABLED) || defined(__ANDROID__)
+		if (scan_default.is_empty() || !scan_default.begins_with("/storage/emulated/0/GEngine")) {
+			scan_default = "/storage/emulated/0/GEngine/Projects";
+		}
+#endif
+		scan_dir->set_current_dir(scan_default);
 		add_child(scan_dir);
 		scan_dir->connect("dir_selected", callable_mp(project_list, &ProjectList::find_projects));
 
@@ -1859,20 +1886,27 @@ ProjectManager::ProjectManager() {
 		Ref<DirAccess> dir_access = DirAccess::create(DirAccess::AccessType::ACCESS_FILESYSTEM);
 
 #if defined(ANDROID_ENABLED) || defined(__ANDROID__)
-		// Tiyakin na ligtas ang pag-check sa GEngine storage
+		// Tiyaking laging nag-eexist ang GEngine storage hierarchy
 		if (dir_access.is_valid()) {
-			if (dir_access->dir_exists("/storage/emulated/0/GEngine")) {
-				print_verbose("GEngine directory exists on external storage.");
+			if (!dir_access->dir_exists("/storage/emulated/0/GEngine")) {
+				dir_access->make_dir_recursive("/storage/emulated/0/GEngine");
+			}
+			if (!dir_access->dir_exists("/storage/emulated/0/GEngine/Projects")) {
+				dir_access->make_dir_recursive("/storage/emulated/0/GEngine/Projects");
 			}
 		}
+
+		String default_project_path = "/storage/emulated/0/GEngine/Projects";
+		String autoscan_path = "/storage/emulated/0/GEngine/Projects";
+#else
+		String default_project_path = EDITOR_GET("filesystem/directories/default_project_path");
+		String autoscan_path = EDITOR_GET("filesystem/directories/autoscan_project_path");
 #endif
 
-		String default_project_path = EDITOR_GET("filesystem/directories/default_project_path");
 		if (!default_project_path.is_empty() && dir_access.is_valid() && !dir_access->dir_exists(default_project_path)) {
 			dir_access->make_dir_recursive(default_project_path);
 		}
 
-		String autoscan_path = EDITOR_GET("filesystem/directories/autoscan_project_path");
 		if (!autoscan_path.is_empty() && dir_access.is_valid()) {
 			if (dir_access->dir_exists(autoscan_path)) {
 				project_list->find_projects(autoscan_path);
